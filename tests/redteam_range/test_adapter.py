@@ -208,10 +208,17 @@ def test_injected_package_fetch_is_mocked_and_never_uses_live_fetch() -> None:
 
     package_findings = [finding for finding in result.findings if finding.detector == "pkgverify"]
     assert result.statuses["pkgverify"].state == "completed"
-    assert "MOCKED" in result.provenance
+    assert result.provenance == {"pkgverify": {"MOCKED"}}
     assert len(package_findings) == 1
     assert package_findings[0].check_id == "MCP025"
     assert fetch.calls == 2
+
+
+def test_unused_package_fetch_has_no_mocked_provenance() -> None:
+    base = surface()
+    result = run_detectors(base, baseline=base, fleet=[], package_fetch=lambda _: "a" * 64)
+    assert result.statuses["pkgverify"].state == "completed"
+    assert result.provenance == {}
 
 
 def test_unsupported_inputs_are_accounted_and_disabled_detector_is_explicit() -> None:

@@ -6,26 +6,16 @@ import copy
 import hashlib
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Literal
 
 from redteam.range.harness.adapter import IntegrityInput
+from redteam.range.mutations.external_schema_ref import operator as _external_schema_ref
 from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceResource, SurfaceTool
 
-Category = Literal[
-    "hidden-instruction",
-    "invisible-unicode",
-    "shadowed-name",
-    "concealed-exfiltration",
-    "ssrf",
-    "egress",
-    "lethal-trifecta",
-    "surface-drift",
-    "capability-escalation",
-    "provenance-drift",
-    "integrity-drift",
-    "annotation-contradiction",
-]
+# Categories are an open registry: a new operator can introduce one without
+# changing a central literal union.
+Category = str
 Prediction = Literal["catch", "miss"]
 
 
@@ -884,6 +874,129 @@ _operators: list[MutationOperator] = [
     ),
 ]
 
+# Keep category additions explicit and reviewable; the implementation lives in
+# its own module so future operators can be registered with one line here.
+_operators.append(_external_schema_ref())
+
+# Each entry describes only findings observed for this mutation. These do not
+# count toward its targeted result, including MCP008 in the two MCP007 misses.
+_collateral: dict[str, dict[str, str]] = {
+    "hidden-desc": {
+        "MCP006": "send implies exfiltration",
+        "MCP008": "instruction-shaped text is detected",
+        "MCP009": "description differs from the pin",
+        "MCP018": "exfiltration capability is new",
+        "MCP019": "instruction override is new",
+    },
+    "hidden-param": {
+        "MCP006": "send implies exfiltration",
+        "MCP008": "parameter text is instruction-shaped",
+        "MCP009": "schema differs from the pin",
+        "MCP018": "exfiltration capability is new",
+        "MCP019": "instruction override is new",
+    },
+    "credential-hunt": {
+        "MCP001": "read implies file access",
+        "MCP009": "description differs from the pin",
+        "MCP019": "credential-hunt pattern is new",
+    },
+    "zwsp": {"MCP009": "description differs from the pin", "MCP019": "obfuscated directive is new"},
+    "tag-chars": {"MCP009": "description differs from the pin", "MCP019": "obfuscated metadata is new"},
+    "variation-selector": {
+        "MCP009": "description differs from the pin",
+        "MCP019": "obfuscated metadata is new",
+    },
+    "cgj": {"MCP009": "description differs from the pin"},
+    "bidi-override": {
+        "MCP009": "description differs from the pin",
+        "MCP019": "directional obfuscation is new",
+    },
+    "mapped-homoglyph-desc": {
+        "MCP002": "write implies file modification",
+        "MCP009": "description differs from the pin",
+        "MCP018": "file-write capability is new",
+        "MCP019": "obfuscated metadata is new",
+    },
+    "shadow-exact": {"MCP009": "tool identity differs from the pin"},
+    "shadow-separator": {
+        "MCP001": "read_file implies file access",
+        "MCP009": "tool identity differs from the pin",
+    },
+    "shadow-mapped-homoglyph": {
+        "MCP008": "tool name contains a mapped homoglyph",
+        "MCP009": "tool identity differs from the pin",
+    },
+    "shadow-unmapped-homoglyph": {"MCP009": "tool identity differs from the pin"},
+    "exfil-metadata": {
+        "MCP003": "webhook implies network access",
+        "MCP009": "description differs from the pin",
+        "MCP018": "network and exfiltration capabilities are new",
+    },
+    "ssrf-url-param": {
+        "MCP003": "fetch and URL imply network access",
+        "MCP009": "tool identity differs from the pin",
+        "MCP041": "the caller controls the outbound destination",
+    },
+    "egress-fixed-host": {"MCP003": "the remote HTTPS resource implies network access"},
+    "egress-desc-url-only": {"MCP009": "description differs from the pin"},
+    "egress-caller-steered-credential": {
+        "MCP003": "URL implies network access",
+        "MCP006": "upload implies exfiltration",
+        "MCP009": "tool identity differs from the pin",
+        "MCP012": "URL-shaped parameter is present",
+    },
+    "trifecta-single": {
+        "MCP001": "read_file implies file access",
+        "MCP003": "fetch and webhook imply network access",
+        "MCP006": "send implies exfiltration",
+        "MCP009": "added tools differ from the pin",
+        "MCP011": "fetch tool accepts a URL",
+        "MCP041": "the caller controls the outbound destination",
+    },
+    "trifecta-fleet": {
+        "MCP001": "read implies file access",
+        "MCP003": "fetch implies network access",
+        "MCP009": "description differs from the pin",
+        "MCP018": "network capability is new",
+    },
+    "escalation-capability": {
+        "MCP002": "delete implies file modification",
+        "MCP004": "execute shell implies command execution",
+        "MCP005": "delete implies destructive access",
+        "MCP009": "description differs from the pin",
+    },
+    "rugpull-description": {
+        "MCP006": "send implies exfiltration",
+        "MCP008": "instruction-shaped text is detected",
+        "MCP009": "description differs from the pin",
+        "MCP018": "exfiltration capability is new",
+    },
+    "annotation-contradiction": {
+        "MCP002": "delete implies file modification",
+        "MCP005": "delete implies destructive access",
+        "MCP009": "tool identity differs from the pin",
+    },
+    "external-schema-ref": {
+        "MCP009": "schema differs from the pin",
+        "MCP012": "schema traversal is incomplete at the external reference",
+        "MCP041": "egress treats the unresolved schema as a possible caller-controlled destination",
+    },
+}
+_operators = [
+    replace(
+        op,
+        allowed_collateral=tuple(_collateral.get(op.id, {})),
+        rationale=op.rationale
+        + (
+            " Collateral: "
+            + "; ".join(f"{key}: {reason}" for key, reason in _collateral[op.id].items())
+            + "."
+            if op.id in _collateral
+            else ""
+        ),
+    )
+    for op in _operators
+]
 OPERATORS: tuple[MutationOperator, ...] = tuple(_operators)
 _BY_ID = {operator.id: operator for operator in OPERATORS}
 

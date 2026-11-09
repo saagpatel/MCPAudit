@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from redteam.range.harness import run_detectors
 from redteam.range.mutations import OPERATORS, MutationOperator, TwinInput
 from redteam.surface import ServerSurface, extract_from_source
 
@@ -27,6 +28,7 @@ CATEGORIES = {
     "provenance-drift",
     "integrity-drift",
     "annotation-contradiction",
+    "external-schema-ref",
 }
 
 
@@ -53,10 +55,24 @@ def _changed_paths(before: object, after: object) -> set[str]:
 
 
 def test_operator_registry_is_unique_and_uses_fixed_categories() -> None:
-    assert len(OPERATORS) == 30
+    assert len(OPERATORS) == 31
     ids = [operator.id for operator in OPERATORS]
     assert len(ids) == len(set(ids))
     assert {operator.category for operator in OPERATORS} == CATEGORIES
+
+
+def test_external_schema_ref_operator_targets_mcp053() -> None:
+    operator = next(operator for operator in OPERATORS if operator.id == "external-schema-ref")
+    twin = operator.apply(TwinInput(surface=BASE_SURFACE, source=BASE_SOURCE))
+
+    schema = twin.surface.tools[0].input_schema
+    properties = schema.get("properties")
+    assert isinstance(properties, dict)
+    value = properties.get("value")
+    assert isinstance(value, dict)
+    assert value.get("$ref") == "https://schemas.example.test/value"
+    result = run_detectors(twin.surface, baseline=None, fleet=[])
+    assert "MCP053" in {finding.check_id for finding in result.findings}
 
 
 @pytest.mark.parametrize("operator", OPERATORS, ids=lambda operator: operator.id)
@@ -124,7 +140,7 @@ def test_operator_changes_only_declared_paths(operator: MutationOperator, tmp_pa
         assert [tool.annotations for tool in extracted.tools] == [
             tool.annotations for tool in twin.surface.tools
         ]
-        if operator.id != "hidden-param":
+        if operator.id not in {"hidden-param", "external-schema-ref"}:
             assert [tool.input_schema for tool in extracted.tools] == [
                 tool.input_schema for tool in twin.surface.tools
             ]

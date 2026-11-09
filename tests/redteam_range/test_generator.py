@@ -17,10 +17,11 @@ def test_generation_is_deterministic(tmp_path: Path) -> None:
     generate(first)
     generate(second)
     files = sorted(path.relative_to(first) for path in first.rglob("*") if path.is_file())
-    assert len(files) == 61
+    assert len(files) == 63
     assert files == sorted(path.relative_to(second) for path in second.rglob("*") if path.is_file())
     assert all((first / path).read_bytes() == (second / path).read_bytes() for path in files)
     assert json.loads((first / "index.json").read_text()) == [op.id for op in OPERATORS]
+    assert "external-schema-ref" in json.loads((first / "index.json").read_text())
 
 
 def test_validator_rejects_undeclared_change() -> None:
