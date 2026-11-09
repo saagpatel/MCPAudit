@@ -1,3 +1,6 @@
+import pytest
+
+from redteam.catalog import load_catalog
 from redteam.chains.labeler import label_server
 from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceConfig, SurfaceTool
 
@@ -139,7 +142,11 @@ def test_browser_prefix_does_not_hide_host_or_file_capabilities() -> None:
             SurfaceTool(
                 name="browser_execute_command", description="Execute an arbitrary shell command on the host"
             ),
-            SurfaceTool(name="browser_save_file", description="Write a local file to a path"),
+            SurfaceTool(
+                name="browser_save_file",
+                description="Write a local file to a path",
+                input_schema={"properties": {"path": {}, "content": {}}},
+            ),
         ],
     )
     writer = ServerSurface(server_name="writer", source="fixture", tools=[SurfaceTool(name="write_file")])
@@ -178,8 +185,116 @@ def test_xcode_build_name_does_not_suppress_file_write() -> None:
     surface = ServerSurface(
         server_name="xcodebuildmcp",
         source="fixture",
-        tools=[SurfaceTool(name="build_project", description="Write a file to a path and build the project")],
+        tools=[
+            SurfaceTool(
+                name="build_project",
+                description="Write a file to a path and build the project",
+                input_schema={"properties": {"path": {}, "content": {}}},
+            )
+        ],
     )
     labels = {(label.tool, label.tag) for label in label_server(surface)}
     assert ("build_project", "runs_build") in labels
     assert ("build_project", "writes_file") in labels
+
+
+@pytest.mark.parametrize(
+    "properties",
+    [
+        {},
+        {"path": {}},
+        {"content": {}},
+        {"path": {"description": "Write caller-provided content here"}},
+        {"content_path": {}},
+    ],
+)
+def test_write_description_does_not_establish_arbitrary_file_writer(properties: dict[str, object]) -> None:
+    surface = ServerSurface(
+        server_name="synthetic",
+        source="fixture",
+        tools=[
+            SurfaceTool(
+                name="save_artifact",
+                description="Write a file with content at a caller-chosen path",
+                input_schema={"properties": properties},
+            )
+        ],
+    )
+    assert not {"writes_file", "writes_git_config"} & {label.tag for label in label_server(surface)}
+
+
+@pytest.mark.parametrize(
+    ("path", "content"),
+    [
+        ("path", "content"),
+        ("file", "data"),
+        ("filename", "text"),
+        ("destination", "body"),
+        ("target", "edits"),
+    ],
+)
+def test_generic_writers_require_path_and_content_parameters(path: str, content: str) -> None:
+    surface = ServerSurface(
+        server_name="synthetic",
+        source="fixture",
+        tools=[
+            SurfaceTool(
+                name="save_artifact",
+                description="Write a file",
+                input_schema={"properties": {path: {}, content: {}}},
+            )
+        ],
+    )
+    labels = {label.tag: label for label in label_server(surface)}
+    assert labels["writes_file"].confidence == "heuristic"
+    assert f"inputSchema.properties.{path}" in labels["writes_file"].evidence
+    assert f"inputSchema.properties.{content}" in labels["writes_file"].evidence
+    assert labels["writes_git_config"].condition is not None
+
+
+def test_catalog_git_tools_keep_read_index_and_ref_roles() -> None:
+    git = load_catalog()["pypi:mcp-server-git"]
+    labels = label_server(git)
+    assert not {"writes_file", "writes_git_config"} & {label.tag for label in labels}
+    for tool in git.tools:
+        selected = {label.tag for label in labels if label.tool == tool.name}
+        if tool.name in {"git_log", "git_show", "git_status"} or tool.name.startswith("git_diff"):
+            assert selected == {"reads_file"}
+        elif tool.name == "git_add":
+            assert selected == {"writes_index", "triggers_git_filter"}
+        elif tool.name == "git_reset":
+            assert selected == {"writes_index"}
+        elif tool.name in {"git_checkout", "git_create_branch"}:
+            assert selected == {"writes_ref"}
+        elif tool.name == "git_commit":
+            assert selected == {"writes_ref", "triggers_hook"}
+
+
+@pytest.mark.parametrize(
+    ("name", "tags"),
+    [
+        ("git_log", {"reads_file"}),
+        ("git_diff", {"reads_file"}),
+        ("git_show", {"reads_file"}),
+        ("git_status", {"reads_file"}),
+        ("git_add", {"writes_index", "triggers_git_filter"}),
+        ("git_reset", {"writes_index"}),
+        ("git_branch", {"writes_ref"}),
+        ("git_checkout", {"writes_ref"}),
+        ("git_create_branch", {"writes_ref"}),
+        ("git_commit", {"writes_ref", "triggers_hook"}),
+    ],
+)
+def test_git_roles_override_generic_write_inference(name: str, tags: set[str]) -> None:
+    surface = ServerSurface(
+        server_name="git",
+        source="fixture",
+        tools=[
+            SurfaceTool(
+                name=name,
+                description="Write file content or execute a command",
+                input_schema={"properties": {"path": {}, "content": {}}},
+            )
+        ],
+    )
+    assert {label.tag for label in label_server(surface)} == tags

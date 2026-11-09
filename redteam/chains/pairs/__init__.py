@@ -54,6 +54,29 @@ class CandidateChain:
     writer_label: ToolLabel
     executor_label: ToolLabel
 
+    def satisfies_template(self) -> bool:
+        """Revalidate both roles against current metadata, not cached labels."""
+        if self.writer.name == self.executor.name:
+            return False
+        expected = next((item for item in TEMPLATES if item.name == self.template.name), self.template)
+        if (self.template.writer_tag, self.template.executor_tag) != (
+            expected.writer_tag,
+            expected.executor_tag,
+        ):
+            return False
+        for server, selected, capability, tag in (
+            (self.writer, self.writer_label, "write", expected.writer_tag),
+            (self.executor, self.executor_label, "execute", expected.executor_tag),
+        ):
+            if server.surface is None or selected.capability != capability or selected.tag != tag:
+                return False
+            if not any(
+                label.tool == selected.tool and label.capability == capability and label.tag == tag
+                for label in label_server(server.surface)
+            ):
+                return False
+        return True
+
     @property
     def artifact(self) -> str:
         return self.template.artifact

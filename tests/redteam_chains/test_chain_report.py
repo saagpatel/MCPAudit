@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from redteam.catalog import load_catalog
 from redteam.chains.__main__ import main
 from redteam.chains.pairs import ConfiguredServer, load_config, pair_servers
 from redteam.chains.report import build_report, to_json, to_markdown
@@ -164,6 +165,35 @@ def test_no_supported_chain_skips_without_running_canary(monkeypatch: pytest.Mon
             "not an exploit against a live MCP server."
         ),
     }
+
+
+@pytest.mark.parametrize("log_and_add_only", [True, False])
+def test_git_only_servers_cannot_receive_a_canary_result(
+    monkeypatch: pytest.MonkeyPatch, log_and_add_only: bool
+) -> None:
+    git = load_catalog()["pypi:mcp-server-git"]
+    servers = [
+        ConfiguredServer(
+            name,
+            git.model_copy(
+                update={
+                    "tools": [tool for tool in git.tools if not log_and_add_only or tool.name == tool_name]
+                }
+            ),
+        )
+        for name, tool_name in (("git-a", "git_log"), ("git-b", "git_add"))
+    ]
+
+    def forbidden() -> ReproductionResult:
+        pytest.fail("Git-only surfaces cannot supply the canary's writer role")
+
+    monkeypatch.setattr("redteam.chains.report.reproduce_git_clean_filter", forbidden)
+    report = build_report(servers, reproduce=True)
+    assert report["ranked"] == []
+    reproduction = report["reproduction"]
+    assert isinstance(reproduction, dict)
+    assert reproduction["status"] == "SKIPPED"
+    assert "provenance_flag" not in reproduction
 
 
 def test_unknown_tool_label_is_reported_as_unranked_candidate() -> None:

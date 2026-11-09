@@ -13,6 +13,7 @@ Tag = Literal[
     "creates_directory",
     "writes_git_config",
     "writes_index",
+    "writes_ref",
     "reads_file",
     "runs_command",
     "runs_browser_script",
@@ -72,19 +73,48 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
     is_machine_room = "machine-room" in identity or "machine_room" in identity
 
     browser_tools: set[str] = set()
-    directory_tools: set[str] = set()
+    restricted_git_tools: set[str] = set()
     for tool in sorted(surface.tools, key=lambda item: item.name):
         name = tool.name.lower()
+        evidence = f"tool name: {tool.name}"
+        if name in {"git_log", "git_show", "git_status", "git_ls_files", "git_rev_parse"} or name.startswith(
+            "git_diff"
+        ):
+            restricted_git_tools.add(tool.name)
+            add(tool.name, "read", "reads_file", evidence, "definite")
+            continue
+        if name in {"git_add", "git_reset", "git_branch", "git_checkout", "git_create_branch", "git_commit"}:
+            restricted_git_tools.add(tool.name)
+            add(
+                tool.name,
+                "write",
+                "writes_index" if name in {"git_add", "git_reset"} else "writes_ref",
+                evidence,
+                "definite",
+            )
+            if name in {"git_add", "git_commit"}:
+                add(
+                    tool.name,
+                    "execute",
+                    "triggers_git_filter" if name == "git_add" else "triggers_hook",
+                    evidence,
+                    "conditional",
+                    (
+                        "Repository has matching .gitattributes and clean filter configuration"
+                        if name == "git_add"
+                        else "Repository has an executable pre-commit hook"
+                    ),
+                )
+            continue
         name_tokens = _tokens(tool.name)
         directory_only = (
             bool(name_tokens & {"directory", "dir"})
             and bool(name_tokens & {"create", "make", "mkdir"})
             and "file" not in name_tokens
         )
-        if directory_only:
-            directory_tools.add(tool.name)
-        evidence = f"tool name: {tool.name}"
         fields = {"name": tool.name, "description": tool.description or ""}
+        path_fields: set[str] = set()
+        content_fields: set[str] = set()
         properties = tool.input_schema.get("properties")
         if isinstance(properties, dict):
             for key, value in sorted(properties.items(), key=lambda item: str(item[0])):
@@ -92,6 +122,11 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
                     continue
                 path = f"inputSchema.properties.{key}"
                 fields[path] = key
+                parameter_tokens = _tokens(key)
+                if parameter_tokens & {"path", "file", "filename", "filepath", "destination", "target"}:
+                    path_fields.add(path)
+                if parameter_tokens & {"content", "contents", "data", "text", "body", "edits"}:
+                    content_fields.add(path)
                 if isinstance(value, dict) and isinstance(value.get("description"), str):
                     fields[f"{path}.description"] = value["description"]
         tokens = {path: _tokens(text) for path, text in fields.items()}
@@ -116,25 +151,6 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
             add(tool.name, "write", "writes_file", "move can place an attacker-controlled file at a path")
         if name in {"write_file", "edit_file"}:
             add(tool.name, "write", "writes_file", evidence, "definite")
-        elif name == "git_add":
-            add(tool.name, "write", "writes_index", evidence, "definite")
-            add(
-                tool.name,
-                "execute",
-                "triggers_git_filter",
-                evidence,
-                "conditional",
-                "Repository has matching .gitattributes and clean filter configuration",
-            )
-        elif name == "git_commit":
-            add(
-                tool.name,
-                "execute",
-                "triggers_hook",
-                evidence,
-                "conditional",
-                "Repository has an executable pre-commit hook",
-            )
         elif name in {"read_file", "read_multiple_files"}:
             add(tool.name, "read", "reads_file", evidence, "definite")
         elif name in {"run_command", "execute_command"}:
@@ -156,18 +172,18 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
                 {"run", "runs", "execute", "exec", "bash", "shell"},
                 {"command", "cmd", "script"},
             ),
-            (
-                "write",
-                "writes_file",
-                {"write", "writes", "create", "save", "put", "edit"},
-                {"file", "path", "content"},
-            ),
             ("read", "fetches_url", {"fetch", "fetches", "retrieve", "download", "request"}, {"url", "uri"}),
         )
         for cap, tag, verbs, objects in rules:
-            if all_tokens & verbs and all_tokens & objects and not (tag == "writes_file" and directory_only):
+            if all_tokens & verbs and all_tokens & objects:
                 relevant = sorted(path for path, words in tokens.items() if words & (verbs | objects))
                 add(tool.name, cap, tag, ", ".join(relevant))
+        if (
+            not directory_only
+            and all_tokens & {"write", "writes", "create", "save", "put", "edit", "edits"}
+            and any(path != content for path in path_fields for content in content_fields)
+        ):
+            add(tool.name, "write", "writes_file", ", ".join(sorted(path_fields | content_fields)))
 
     mapping: dict[PermissionCategory, tuple[Capability, Tag]] = {
         PermissionCategory.SHELL_EXEC: ("execute", "runs_command"),
@@ -176,9 +192,17 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
         PermissionCategory.NETWORK: ("read", "fetches_url"),
     }
     for finding in PermissionAnalyzer().analyze_server(surface.to_tools()):
-        if finding.category in mapping and not (
-            finding.category == PermissionCategory.FILE_WRITE and finding.tool_name in directory_tools
+        if finding.tool_name in restricted_git_tools:
+            continue
+        # FILE_WRITE is a broad metadata signal, not evidence of arbitrary
+        # caller-chosen file contents and destinations. It may enrich an
+        # independently established writer label, but cannot create one.
+        if (
+            finding.category == PermissionCategory.FILE_WRITE
+            and (finding.tool_name, "writes_file") not in labels
         ):
+            continue
+        if finding.category in mapping:
             cap, tag = mapping[finding.category]
             paths = ", ".join(finding.field_paths) or ", ".join(finding.evidence)
             add(finding.tool_name, cap, tag, f"PermissionAnalyzer {finding.category.value}: {paths}")

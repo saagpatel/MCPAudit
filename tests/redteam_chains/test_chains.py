@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from redteam.catalog import load_catalog
 from redteam.chains.labeler import label_server
 from redteam.chains.pairs import ConfiguredServer, load_config, pair_servers
 from redteam.chains.rank import rank_chains
@@ -148,3 +149,39 @@ def test_directory_only_server_does_not_form_file_writing_chains() -> None:
     )
     git = ServerSurface(server_name="git", source="fixture", tools=[SurfaceTool(name="git_add")])
     assert pair_servers([ConfiguredServer("directory", directory), ConfiguredServer("git", git)]) == []
+
+
+def test_git_log_and_other_servers_git_add_do_not_form_a_chain() -> None:
+    git = load_catalog()["pypi:mcp-server-git"]
+    servers = [
+        ConfiguredServer(
+            name,
+            git.model_copy(update={"tools": [tool for tool in git.tools if tool.name == tool_name]}),
+        )
+        for name, tool_name in (("reader", "git_log"), ("indexer", "git_add"))
+    ]
+    assert pair_servers(servers) == []
+
+
+def test_two_catalog_git_servers_do_not_supply_a_file_writer() -> None:
+    git = load_catalog()["pypi:mcp-server-git"]
+    servers = [ConfiguredServer("git-a", git), ConfiguredServer("git-b", git)]
+    assert pair_servers(servers) == []
+
+
+def test_chain_roles_are_revalidated_against_current_surface() -> None:
+    from dataclasses import replace
+
+    servers = load_config(FIXTURES / "git-plus-filesystem.json")
+    chain = next(chain for chain in pair_servers(servers) if chain.template.name == "git-clean-filter")
+    assert chain.satisfies_template()
+    assert not replace(chain, writer=replace(chain.writer, surface=None)).satisfies_template()
+    assert not replace(chain, executor=replace(chain.executor, surface=None)).satisfies_template()
+    assert not replace(chain, writer_label=replace(chain.writer_label, tool="read_file")).satisfies_template()
+    assert not replace(
+        chain, executor_label=replace(chain.executor_label, tool="git_log")
+    ).satisfies_template()
+    assert not replace(chain, template=replace(chain.template, writer_tag="reads_file")).satisfies_template()
+    assert chain.writer.surface is not None
+    chain.writer.surface.tools.clear()
+    assert not chain.satisfies_template()
