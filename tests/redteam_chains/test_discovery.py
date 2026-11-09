@@ -6,7 +6,7 @@ import os
 import subprocess
 import sys
 from collections.abc import Iterator
-from dataclasses import is_dataclass, replace
+from dataclasses import fields, replace
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from typing import cast
@@ -31,19 +31,24 @@ def shadow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
         "from pathlib import Path\n"
         "@dataclass(frozen=True)\n"
         "class DiscoveryPaths:\n"
+        "    home: Path\n"
+        "    claude_json: Path\n"
         "    claude_desktop_config: Path\n"
-        "    codex_config: Path\n"
-        "    codex_profiles_dir: Path\n"
-        "    projects_root: Path\n"
         "    claude_extensions_dir: Path\n"
-        "    claude_extensions_settings_dir: Path\n"
-        "    claude_code_config: Path\n"
+        "    codex_config: Path\n"
+        "    codex_profile_configs: list[Path]\n"
+        "    projects_root: Path | None\n"
+        "    project_glob_depth: int\n"
+        "    def __getattr__(self, name):\n"
+        "        raise AssertionError(f'unexpected DiscoveryPaths field: {name}')\n"
         "    @classmethod\n"
         "    def default(cls):\n"
         "        root = Path.home() / 'synthetic-home'\n"
-        "        return cls(root / 'desktop.json', root / 'config.toml', root / 'profiles',\n"
-        "                   root / 'projects', root / 'Claude Extensions',\n"
-        "                   root / 'Claude Extensions Settings', root / 'code.json')\n",
+        "        return cls(root, root / 'code.json', root / 'desktop.json',\n"
+        "                   root / 'Claude Extensions', root / 'config.toml',\n"
+        "                   [root / 'profiles' / 'synthetic.toml',\n"
+        "                    root / 'profiles' / 'synthetic' / 'config.toml'],\n"
+        "                   root / 'projects', 4)\n",
         encoding="utf-8",
     )
     (collectors / "base.py").write_text(
@@ -81,6 +86,21 @@ def shadow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     for name in list(sys.modules):
         if name == "shadow_mcp" or name.startswith("shadow_mcp."):
             sys.modules.pop(name)
+
+
+def test_discovery_paths_field_contract(shadow: Path) -> None:
+    discover_servers(include_claude_code=True, dxt_dir=shadow / "selected")
+    paths_class = sys.modules["shadow_mcp.config"].DiscoveryPaths
+    assert [field.name for field in fields(paths_class)] == [
+        "home",
+        "claude_json",
+        "claude_desktop_config",
+        "claude_extensions_dir",
+        "codex_config",
+        "codex_profile_configs",
+        "projects_root",
+        "project_glob_depth",
+    ]
 
 
 def test_discovery_allowlist_mapping_and_notes(shadow: Path) -> None:
@@ -221,7 +241,6 @@ def test_discovery_dxt_defaults_and_provenance_override(
         lambda: replace(
             paths,
             claude_extensions_dir=extensions,
-            claude_extensions_settings_dir=extensions.parent / "Claude Extensions Settings",
         ),
     )
     spec = SimpleNamespace(
@@ -371,7 +390,6 @@ def test_discovery_dxt_nested_launch_with_unexpanded_placeholders(
         lambda: replace(
             paths,
             claude_extensions_dir=extensions,
-            claude_extensions_settings_dir=settings,
         ),
     )
     # Exact collector provenance selects the manifest within the default root.
@@ -463,6 +481,29 @@ def _fixture_path(paths: object, field: str) -> Path:
     return value
 
 
+def test_project_protection_matches_collector_bounds(tmp_path: Path) -> None:
+    from redteam.chains.discovery import _project_files
+
+    for name in (
+        ".mcp.json",
+        "project/mcp.json",
+        ".cursor/.mcp.json",
+        ".vscode/mcp.json",
+        "node_modules/.mcp.json",
+        ".hidden/.mcp.json",
+        "project/deep/.mcp.json",
+    ):
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("{}")
+    assert set(_project_files(tmp_path, 2)) == {
+        tmp_path / ".mcp.json",
+        tmp_path / "project/mcp.json",
+        tmp_path / ".cursor/.mcp.json",
+        tmp_path / ".vscode/mcp.json",
+    }
+
+
 @pytest.fixture
 def empty_shadow(shadow: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[object, SimpleNamespace, ModuleType]:
     module = importlib.import_module("shadow_mcp")
@@ -496,11 +537,11 @@ def test_empty_or_failed_config_is_protected_before_collection(
     sources = {
         "desktop": _fixture_path(paths, "claude_desktop_config"),
         "codex": _fixture_path(paths, "codex_config"),
-        "profile-flat": _fixture_path(paths, "codex_profiles_dir") / "synthetic.toml",
-        "profile-directory": _fixture_path(paths, "codex_profiles_dir") / "synthetic" / "config.toml",
+        "profile-flat": _fixture_path(paths, "home") / "profiles" / "synthetic.toml",
+        "profile-directory": _fixture_path(paths, "home") / "profiles" / "synthetic" / "config.toml",
         "project-root": _fixture_path(paths, "projects_root") / ".mcp.json",
         "project-nested": _fixture_path(paths, "projects_root") / "group" / "project" / ".mcp.json",
-        "code": _fixture_path(paths, "claude_code_config"),
+        "code": _fixture_path(paths, "claude_json"),
     }
     config = sources[source]
     original = b"invalid synthetic config" if error_only else b"{}"
@@ -528,10 +569,10 @@ def test_claude_code_path_is_registered_only_when_opted_in(
     paths, _, module = empty_shadow
     inputs: list[Path] = []
     discover_servers(input_paths=inputs)
-    assert _fixture_path(paths, "claude_code_config") not in inputs
+    assert _fixture_path(paths, "claude_json") not in inputs
     assert "ClaudeCodeCollector" not in module.constructed
     discover_servers(input_paths=inputs, include_claude_code=True)
-    assert _fixture_path(paths, "claude_code_config") in inputs
+    assert _fixture_path(paths, "claude_json") in inputs
 
 
 @pytest.mark.parametrize("override", [False, True])
@@ -563,30 +604,6 @@ def test_reports_cannot_be_created_in_empty_metadata_directories(
     assert not output.exists()
 
 
-def test_resolution_settings_are_protected_when_collector_settings_differ(
-    empty_shadow: tuple[object, SimpleNamespace, ModuleType],
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    paths, _, module = empty_shadow
-    assert is_dataclass(paths) and not isinstance(paths, type)
-    paths_class = importlib.import_module("shadow_mcp.config").DiscoveryPaths
-    monkeypatch.setattr(
-        paths_class,
-        "default",
-        lambda: replace(paths, claude_extensions_settings_dir=tmp_path / "collector-settings"),
-    )
-    settings = _fixture_path(paths, "claude_extensions_dir").parent / "Claude Extensions Settings"
-    settings.mkdir(parents=True)
-    metadata = settings / "synthetic.json"
-    metadata.write_bytes(b"{}")
-    output = tmp_path / "settings-alias.json"
-    output.hardlink_to(metadata)
-    assert main(["run", "--discover", "--json", str(output)]) == 2
-    assert module.constructed == [] and module.calls == []
-    assert metadata.read_bytes() == b"{}"
-
-
 @pytest.mark.parametrize("directory", ["claude_extensions_dir", "claude_extensions_settings_dir"])
 @pytest.mark.parametrize("output_flag", ["--json", "--md"])
 @pytest.mark.parametrize("alias_kind", ["direct", "symlink", "hardlink"])
@@ -598,7 +615,10 @@ def test_empty_extension_metadata_is_protected_before_collection(
     alias_kind: str,
 ) -> None:
     paths, result, module = empty_shadow
-    root = Path(getattr(paths, directory))
+    extensions = _fixture_path(paths, "claude_extensions_dir")
+    root = (
+        extensions.parent / "Claude Extensions Settings" if directory.endswith("settings_dir") else extensions
+    )
     metadata = root / ("empty.json" if directory.endswith("settings_dir") else "empty/manifest.json")
     metadata.parent.mkdir(parents=True, exist_ok=True)
     metadata.write_bytes(b"{}")
@@ -615,18 +635,12 @@ def test_empty_extension_metadata_is_protected_before_collection(
     assert metadata.read_bytes() == output.read_bytes() == b"{}"
 
 
-@pytest.mark.parametrize("mutable_paths", [False, True])
 def test_dxt_override_is_applied_to_collectors_before_discovery(
     empty_shadow: tuple[object, SimpleNamespace, ModuleType],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    mutable_paths: bool,
 ) -> None:
     paths, result, module = empty_shadow
-    if mutable_paths:
-        paths_class = importlib.import_module("shadow_mcp.config").DiscoveryPaths
-        paths = SimpleNamespace(**vars(paths))
-        monkeypatch.setattr(paths_class, "default", lambda: paths)
     override = tmp_path / "selected" / "Claude Extensions"
     extension = override / "synthetic.extension"
     extension.mkdir(parents=True)
@@ -651,25 +665,19 @@ def test_dxt_override_is_applied_to_collectors_before_discovery(
     class DxtCollector:
         def __init__(self, selected: object) -> None:
             assert _fixture_path(selected, "claude_extensions_dir") == override
-            assert _fixture_path(selected, "claude_extensions_settings_dir") == (
-                override.parent / "Claude Extensions Settings"
-            )
 
     monkeypatch.setattr(dxt_module, "DxtCollector", DxtCollector)
     original_glob = Path.glob
 
     def guarded_glob(path: Path, pattern: str, **kwargs: object) -> Iterator[Path]:
         assert path != _fixture_path(paths, "claude_extensions_dir")
-        assert path != _fixture_path(paths, "claude_extensions_settings_dir")
+        assert path != _fixture_path(paths, "claude_extensions_dir").parent / "Claude Extensions Settings"
         return original_glob(path, pattern)
 
     monkeypatch.setattr(Path, "glob", guarded_glob)
     servers = discover_servers(dxt_dir=override)
     collected_paths = module.calls[0][0]
     assert _fixture_path(collected_paths, "claude_extensions_dir") == override
-    assert _fixture_path(collected_paths, "claude_extensions_settings_dir") == (
-        override.parent / "Claude Extensions Settings"
-    )
     assert _fixture_path(paths, "claude_extensions_dir") != override  # Defaults were not mutated.
     assert len(servers) == 1 and servers[0].source == "dxt-manifest"
     assert servers[0].surface is not None

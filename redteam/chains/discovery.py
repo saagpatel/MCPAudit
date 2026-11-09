@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import inspect
 from collections.abc import Callable
-from copy import copy
 from dataclasses import is_dataclass, replace
 from pathlib import Path
 from types import ModuleType
@@ -132,24 +131,50 @@ def _protect_configured_paths(
 ) -> None:
     """Register collector inputs even if parsing fails or returns no servers."""
     input_paths.extend(_path(paths, field) for field in ("claude_desktop_config", "codex_config"))
-    profiles = _path(paths, "codex_profiles_dir")
-    input_paths.extend(sorted(profiles.glob("*.toml")))
-    input_paths.extend(sorted(profiles.glob("*/config.toml")))
-    projects = _path(paths, "projects_root")
-    input_paths.extend(sorted(projects.rglob(".mcp.json")))
+    profiles: object = getattr(paths, "codex_profile_configs", None)
+    if not isinstance(profiles, list) or any(not isinstance(item, Path) for item in profiles):
+        raise ShadowImportError("incompatible shadow-mcp: invalid DiscoveryPaths.codex_profile_configs")
+    input_paths.extend(profiles)
+    projects: object = getattr(paths, "projects_root", None)
+    depth: object = getattr(paths, "project_glob_depth", None)
+    if (projects is not None and not isinstance(projects, Path)) or type(depth) is not int:
+        raise ShadowImportError("incompatible shadow-mcp: invalid DiscoveryPaths project settings")
+    if isinstance(projects, Path):
+        input_paths.extend(_project_files(projects, depth))
     if include_claude_code:
-        input_paths.append(_path(paths, "claude_code_config"))
+        input_paths.append(_path(paths, "claude_json"))
     extensions = _path(paths, "claude_extensions_dir")
-    # The collector uses its configured settings path; manifest resolution also
-    # reads the conventional sibling directory. Protect both if they differ.
-    settings_roots = {
-        _path(paths, "claude_extensions_settings_dir"),
-        extensions.parent / "Claude Extensions Settings",
-    }
-    input_directories.append(extensions)
-    for settings in sorted(settings_roots):
-        input_directories.append(settings)
-        input_paths.extend(metadata_inputs(extensions, settings))
+    settings = extensions.parent / "Claude Extensions Settings"
+    input_directories.extend([extensions, settings])
+    input_paths.extend(metadata_inputs(extensions, settings))
+
+
+def _project_files(root: Path, depth: int) -> list[Path]:
+    """Mirror shadow-mcp's bounded project collector, including its file cap."""
+    skipped = {"node_modules", ".git", ".venv", "venv", "dist", "build", "__pycache__", "target"}
+    found: list[Path] = []
+    stack = [root]
+    while stack and len(found) < 200:
+        current = stack.pop()
+        try:
+            entries = list(current.iterdir())
+        except OSError:
+            continue
+        for entry in entries:
+            try:
+                if entry.is_dir():
+                    if (entry.name in skipped or entry.name.startswith(".")) and entry.name not in {
+                        ".cursor",
+                        ".vscode",
+                    }:
+                        continue
+                    if len(entry.parts) - len(root.parts) < depth:
+                        stack.append(entry)
+                elif entry.name in (".mcp.json", "mcp.json"):
+                    found.append(entry)
+            except OSError:
+                continue
+    return found
 
 
 def discover_servers(
@@ -190,17 +215,11 @@ def discover_servers(
         raise ShadowImportError("incompatible shadow-mcp: collector is not callable")
     paths: object = default()
     if dxt_dir is not None:
-        overrides = {
-            "claude_extensions_dir": dxt_dir,
-            "claude_extensions_settings_dir": dxt_dir.parent / "Claude Extensions Settings",
-        }
         try:
             if is_dataclass(paths) and not isinstance(paths, type):
-                paths = replace(paths, **overrides)
+                paths = replace(paths, claude_extensions_dir=dxt_dir)
             else:
-                paths = copy(paths)
-                for field, value in overrides.items():
-                    setattr(paths, field, value)
+                raise TypeError("DiscoveryPaths must be a dataclass")
         except (AttributeError, TypeError) as exc:
             raise ShadowImportError("incompatible shadow-mcp: DiscoveryPaths DXT fields") from exc
     dxt_dir = _path(paths, "claude_extensions_dir")
