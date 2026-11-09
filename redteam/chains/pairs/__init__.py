@@ -211,7 +211,7 @@ def _url_identity(
     Scheme/host are case-insensitive and absent ports use the scheme default.
     Empty path means `/`; other paths remain exact (case, escapes, dot segments,
     repeated and trailing slashes). Fragments and userinfo are not routing
-    identity. Form-decoded query pairs compare as a multiset, preserving blanks,
+    identity. Form-decoded query pairs compare in order, preserving blanks,
     duplicates and key/value case. Hash every value, including credentials.
     Pin snapshots cannot establish identity from redacted routing fields.
     Reject whitespace/control characters rather than letting urlsplit strip them.
@@ -226,10 +226,8 @@ def _url_identity(
         if pin_snapshot and "<redacted>" in unquote(parsed.path + "?" + parsed.query):
             return None
         query = tuple(
-            sorted(
-                (key, sha256(value.encode("utf-8")).hexdigest())
-                for key, value in parse_qsl(parsed.query, keep_blank_values=True, errors="strict")
-            )
+            (key, sha256(value.encode("utf-8")).hexdigest())
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True, errors="strict")
         )
     except (ValueError, UnicodeError):
         return None

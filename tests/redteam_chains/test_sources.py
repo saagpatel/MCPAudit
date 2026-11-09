@@ -357,13 +357,13 @@ def test_aliased_build_surface_keeps_launch_identity_and_forms_chain(
         pytest.param(
             "https://example.invalid/mcp?server=filesystem&mode=read",
             "https://example.invalid/mcp?mode=read&server=filesystem",
-            True,
+            False,
             id="query-order",
         ),
         pytest.param(
             "https://example.invalid/mcp?server=one&server=two&server=one",
             "https://example.invalid/mcp?server=two&server=one&server=one",
-            True,
+            False,
             id="duplicate-order",
         ),
         pytest.param(
@@ -485,7 +485,7 @@ def test_query_comparison_never_emits_values_in_reports(
         server_name=config.name,
         source="fixture",
         config=SurfaceConfig(
-            transport="http", url=f"https://example.invalid/mcp?mode=private-mode&{key}={other}"
+            transport="http", url=f"https://example.invalid/mcp?{key}={other}&mode=private-mode"
         ),
         tools=[SurfaceTool(name="build_project")],
     )
