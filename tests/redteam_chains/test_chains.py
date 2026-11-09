@@ -94,11 +94,10 @@ def test_write_then_run_ranks_below_clean_filter() -> None:
     clean = next(c for c in ranked if c.chain.template.name == "git-clean-filter")
     write_run = next(c for c in ranked if c.chain.template.name == "write-then-run")
     assert [(s.server, s.tool) for s in write_run.chain.steps] == [
-        ("filesystem", "create_directory"),
+        ("filesystem", "edit_file"),
         ("shell", "bash"),
     ]
     assert {member.writer_label.tool for member in write_run.alternatives} == {
-        "create_directory",
         "edit_file",
         "move_file",
         "write_file",
@@ -136,3 +135,16 @@ def test_explicit_surfaces_and_unknown_scope() -> None:
     hook = next(server for server in servers if server.name == "hook-only")
     assert hook.surface is not None
     assert "triggers_hook" in {label.tag for label in label_server(hook.surface)}
+
+
+def test_directory_only_server_does_not_form_file_writing_chains() -> None:
+    directory = ServerSurface(
+        server_name="directory",
+        source="fixture",
+        tools=[
+            SurfaceTool(name="create_directory", input_schema={"properties": {"path": {"type": "string"}}}),
+            SurfaceTool(name="create_dir", input_schema={"properties": {"path": {"type": "string"}}}),
+        ],
+    )
+    git = ServerSurface(server_name="git", source="fixture", tools=[SurfaceTool(name="git_add")])
+    assert pair_servers([ConfiguredServer("directory", directory), ConfiguredServer("git", git)]) == []

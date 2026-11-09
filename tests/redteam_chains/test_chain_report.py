@@ -87,13 +87,12 @@ def test_cli_writes_both_reports(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert json.loads(json_path.read_text())["ranked"][0]["template"] == "git-clean-filter"
     markdown = md_path.read_text()
     assert "| Steps |" in markdown
-    tools = r"filesystem.create_directory\|edit_file\|move_file\|write_file"
+    tools = r"filesystem.edit_file\|move_file\|write_file"
     assert f"{tools} → git.git_add" in markdown
     assert f"{tools} → git.git_commit" in markdown
     rows = json.loads(json_path.read_text())["ranked"]
     assert [row["template"] for row in rows] == ["git-clean-filter", "git-hook"]
     assert rows[0]["alternative_tool_pairs"] == [
-        {"writer_tool": "create_directory", "executor_tool": "git_add"},
         {"writer_tool": "edit_file", "executor_tool": "git_add"},
         {"writer_tool": "move_file", "executor_tool": "git_add"},
         {"writer_tool": "write_file", "executor_tool": "git_add"},

@@ -72,8 +72,17 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
     is_machine_room = "machine-room" in identity or "machine_room" in identity
 
     browser_tools: set[str] = set()
+    directory_tools: set[str] = set()
     for tool in sorted(surface.tools, key=lambda item: item.name):
         name = tool.name.lower()
+        name_tokens = _tokens(tool.name)
+        directory_only = (
+            bool(name_tokens & {"directory", "dir"})
+            and bool(name_tokens & {"create", "make", "mkdir"})
+            and "file" not in name_tokens
+        )
+        if directory_only:
+            directory_tools.add(tool.name)
         evidence = f"tool name: {tool.name}"
         fields = {"name": tool.name, "description": tool.description or ""}
         properties = tool.input_schema.get("properties")
@@ -101,7 +110,7 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
                 "runs_browser_script",
                 "JavaScript in browser/page/tab context; overrides host command inference",
             )
-        if name == "create_directory":
+        if directory_only:
             add(tool.name, "write", "creates_directory", evidence)
         elif name == "move_file":
             add(tool.name, "write", "writes_file", "move can place an attacker-controlled file at a path")
@@ -156,7 +165,7 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
             ("read", "fetches_url", {"fetch", "fetches", "retrieve", "download", "request"}, {"url", "uri"}),
         )
         for cap, tag, verbs, objects in rules:
-            if all_tokens & verbs and all_tokens & objects:
+            if all_tokens & verbs and all_tokens & objects and not (tag == "writes_file" and directory_only):
                 relevant = sorted(path for path, words in tokens.items() if words & (verbs | objects))
                 add(tool.name, cap, tag, ", ".join(relevant))
 
@@ -167,7 +176,9 @@ def label_server(surface: ServerSurface) -> list[ToolLabel]:
         PermissionCategory.NETWORK: ("read", "fetches_url"),
     }
     for finding in PermissionAnalyzer().analyze_server(surface.to_tools()):
-        if finding.category in mapping:
+        if finding.category in mapping and not (
+            finding.category == PermissionCategory.FILE_WRITE and finding.tool_name in directory_tools
+        ):
             cap, tag = mapping[finding.category]
             paths = ", ".join(finding.field_paths) or ", ".join(finding.evidence)
             add(finding.tool_name, cap, tag, f"PermissionAnalyzer {finding.category.value}: {paths}")

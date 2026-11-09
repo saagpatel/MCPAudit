@@ -124,7 +124,7 @@ def test_browser_and_filesystem_labels_override_generic_inference() -> None:
     labels = {(label.tool, label.tag): label for label in label_server(surface)}
     assert ("execute_javascript", "runs_browser_script") in labels
     assert ("execute_javascript", "runs_command") not in labels
-    assert ("create_directory", "writes_file") in labels
+    assert ("create_directory", "writes_file") not in labels
     assert ("create_directory", "creates_directory") in labels
     assert "attacker-controlled" in labels["move_file", "writes_file"].evidence
 
