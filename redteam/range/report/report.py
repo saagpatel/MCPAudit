@@ -314,6 +314,15 @@ def _html_report(markdown: str) -> str:
     )
 
 
+def _id_list(value: object) -> list[str]:
+    """Normalize a recorded check-ID list; anything malformed compares as its string form."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return sorted({str(item) for item in value})
+    return [repr(value)]
+
+
 def _baseline_diff(current: ScanData, baseline: ScanData) -> tuple[list[str], list[str], list[str]]:
     before = {twin["id"]: twin for twin in baseline["twins"]}
     after = {twin["id"]: twin for twin in current["twins"]}
@@ -329,8 +338,8 @@ def _baseline_diff(current: ScanData, baseline: ScanData) -> tuple[list[str], li
         # Retargeting a twin's check IDs (or widening what counts as collateral) changes what a
         # CAUGHT result means, so it needs explicit acceptance even when the result is unchanged.
         for id_field in ("expected_ids", "allowed_collateral"):
-            old_ids = sorted(set(previous.get(id_field, [])))
-            new_ids = sorted(set(twin.get(id_field, [])))
+            old_ids = _id_list(previous.get(id_field))
+            new_ids = _id_list(twin.get(id_field))
             if old_ids != new_ids:
                 old_text, new_text = ", ".join(old_ids) or "—", ", ".join(new_ids) or "—"
                 regressions.append(f"{twin_id}: {id_field} changed: {old_text} → {new_text}")
