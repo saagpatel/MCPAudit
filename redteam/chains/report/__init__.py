@@ -67,6 +67,7 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
             "Declared, catalog, and historical surfaces do not verify current server behavior. "
             "Ranking describes conditional capability composition, not exploitability."
         ),
+        "analysis_incomplete": any(server.parse_error for server in servers),
         "servers": [
             {
                 "name": server.name,
@@ -193,6 +194,8 @@ def to_markdown(report: dict[str, object]) -> str:
             f"{_cell(row['score'])}: {explanation} | {conditions} | "
             f"{source_text} |"
         )
+    if report["analysis_incomplete"]:
+        lines.extend(["", "Analysis incomplete: one or more server entries could not be parsed."])
     unknown = ", ".join(_cell(name) for name in _items(report["unknown_surfaces"]))
     lines.extend(["", f"UNKNOWN surfaces: {unknown or 'none'}."])
     unknown_labels = _items(report.get("unknown_labels"))

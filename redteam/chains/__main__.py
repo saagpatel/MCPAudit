@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from redteam.chains.pairs import load_config
+from redteam.chains.pairs import AmbiguousInput, load_config
 from redteam.chains.report import build_report, to_json, to_markdown
 
 
@@ -40,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--allow-skip", action="store_true", help="return success when a requested canary is skipped"
     )
+    run.add_argument("--allow-incomplete", action="store_true", help="allow success with parse errors")
     run.add_argument("--json", type=Path, dest="json_path")
     run.add_argument("--md", type=Path, dest="md_path")
     options = parser.parse_args(argv)
@@ -62,12 +63,17 @@ def main(argv: list[str] | None = None) -> int:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(content, encoding="utf-8")
         print(markdown, end="")
+        if report["analysis_incomplete"] and not options.allow_incomplete:
+            return 1
         reproduction = report["reproduction"]
         if isinstance(reproduction, dict):
             if reproduction.get("status") == "NOT_REPRODUCED":
                 return 1
             if reproduction.get("status") == "SKIPPED" and not options.allow_skip:
                 return 3
+    except AmbiguousInput as exc:
+        print(f"chains failed: {exc}", file=sys.stderr)
+        return 2
     except OutputConflict:
         print(
             "chains failed (ValueError); report destinations must be distinct from inputs and each other "

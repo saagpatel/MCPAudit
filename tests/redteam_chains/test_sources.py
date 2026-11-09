@@ -24,7 +24,14 @@ def _server_config() -> ServerConfig:
 
 
 def _surface(tool_name: str) -> ServerSurface:
-    return ServerSurface(server_name="filesystem", source="fixture", tools=[SurfaceTool(name=tool_name)])
+    return ServerSurface(
+        server_name="filesystem",
+        source="fixture",
+        config=SurfaceConfig(
+            command="npx", args=["-y", "@modelcontextprotocol/server-filesystem", "/synthetic/repo"]
+        ),
+        tools=[SurfaceTool(name=tool_name)],
+    )
 
 
 def test_codex_toml_uses_mcp_parser_and_keeps_only_environment_key_names(tmp_path: Path) -> None:
@@ -326,3 +333,73 @@ def test_conflicting_pins_for_same_launch_identity_yield_unknown(tmp_path: Path)
 
     assert server.tool_surface == "UNKNOWN"
     assert server.surface is None
+
+
+@pytest.mark.parametrize("kind", ["json", "toml"])
+@pytest.mark.parametrize("mixed", [False, True])
+def test_malformed_entries_are_reported_incomplete(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], kind: str, mixed: bool
+) -> None:
+    from redteam.chains.__main__ import main
+    from redteam.chains.report import build_report
+
+    path = tmp_path / f"config.{kind}"
+    if kind == "json":
+        entries: dict[str, object] = {"bad": {"command": "server", "args": "secret-value"}}
+        if mixed:
+            entries["good"] = {"command": "synthetic", "args": []}
+        path.write_text(json.dumps({"mcpServers": entries}), encoding="utf-8")
+    else:
+        content = '[mcp_servers.bad]\ncommand = "server"\nargs = "secret-value"\n'
+        if mixed:
+            content += '[mcp_servers.good]\ncommand = "synthetic"\nargs = []\n'
+        path.write_text(content, encoding="utf-8")
+    report = build_report(load_config(path))
+    assert report["analysis_incomplete"] is True
+    unknown = report["unknown_surfaces"]
+    servers = report["servers"]
+    assert isinstance(unknown, list) and "bad" in unknown
+    assert isinstance(servers, list) and len(servers) == (2 if mixed else 1)
+    assert "secret-value" not in repr(report)
+    assert main(["run", "--config", str(path)]) == 1
+    output = capsys.readouterr().out
+    assert "Analysis incomplete" in output and "bad" in output
+    assert "secret-value" not in output
+    assert main(["run", "--config", str(path), "--allow-incomplete"]) == 0
+
+
+def test_missing_and_changed_explicit_identity_do_not_match(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    mapping = tmp_path / "mapping.json"
+    surface = tmp_path / "surface.json"
+    mapping.write_text(json.dumps({"example": "surface.json"}))
+    path.write_text(json.dumps({"mcpServers": {"example": {"command": "new", "args": []}}}))
+    for identity in (None, {"command": "old", "args": []}):
+        data: dict[str, object] = {
+            "server_name": "example",
+            "source": "fixture",
+            "tools": [{"name": "write_file"}],
+        }
+        if identity is not None:
+            data["config"] = identity
+        surface.write_text(json.dumps(data))
+        assert load_config(path, mapping)[0].tool_surface == "UNKNOWN"
+
+
+def test_unused_surface_mapping_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(json.dumps({"mcpServers": {"example": {"command": "server"}}}))
+    (tmp_path / "surface.json").write_text(_surface("write_file").to_json())
+    mapping = tmp_path / "mapping.json"
+    mapping.write_text(json.dumps({"typo": "surface.json"}))
+    with pytest.raises(ValueError, match="unknown server name"):
+        load_config(path, mapping)
+
+
+def test_duplicate_names_across_maps_are_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "config.json"
+    path.write_text(
+        json.dumps({"mcpServers": {"same": {"command": "one"}}, "servers": {"same": {"command": "two"}}})
+    )
+    with pytest.raises(ValueError, match="duplicate server names"):
+        load_config(path)

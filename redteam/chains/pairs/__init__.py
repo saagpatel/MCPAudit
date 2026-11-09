@@ -7,12 +7,17 @@ from pathlib import Path
 from pydantic import TypeAdapter, ValidationError
 
 from mcp_audit.api import parse_config as parse_mcp_config
+from mcp_audit.discovery.base import ConfigParseError
 from mcp_audit.models import PinVerificationState, ServerConfig
 from mcp_audit.pinning import PinStore
 from redteam.catalog import CATALOG, CATALOG_FILES, catalog_surface, load_catalog
 from redteam.chains.labeler import ToolLabel, label_server
 from redteam.chains.templates import TEMPLATES, Template
 from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceTool
+
+
+class AmbiguousInput(ValueError):
+    """A fixed, value-free diagnostic for ambiguous input mappings."""
 
 
 @dataclass(frozen=True)
@@ -25,6 +30,7 @@ class ConfiguredServer:
     source: str = "unknown"
     provenance_source: str | None = None
     provenance_location: str | None = None
+    parse_error: bool = False
 
     @property
     def tool_surface(self) -> str:
@@ -60,18 +66,18 @@ class CandidateChain:
         return self.template.preconditions
 
 
-def _read_configs(path: Path) -> list[ServerConfig]:
+def _read_configs(path: Path, errors: list[ConfigParseError]) -> list[ServerConfig]:
     if path.name.startswith(".env") or path.suffix not in {".json", ".toml"}:
         raise ValueError("config must be an explicit JSON or TOML file")
     try:
         content = path.read_text(encoding="utf-8")
         if path.suffix == ".json":
-            return parse_mcp_config(content, source=path.name)
+            return parse_mcp_config(content, source=path.name, parse_errors=errors)
         document = tomllib.loads(content)
         server_map = document.get("mcp_servers")
         if not isinstance(server_map, dict):
             raise ValueError("Codex TOML must contain [mcp_servers.*] tables")
-        return parse_mcp_config({"mcpServers": server_map}, source=path.name)
+        return parse_mcp_config({"mcpServers": server_map}, source=path.name, parse_errors=errors)
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(f"could not parse explicit config ({type(exc).__name__})") from exc
 
@@ -160,7 +166,7 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
 
 
 def _explicit_surface_matches(surface: ServerSurface, name: str, config: ServerConfig) -> bool:
-    """Require mapped surface name and any declared launch fields to match."""
+    """Require the mapped name and a fully declared matching launch identity."""
     if surface.server_name != name:
         return False
     configured: dict[str, object] = {
@@ -170,17 +176,8 @@ def _explicit_surface_matches(surface: ServerSurface, name: str, config: ServerC
         "url": config.url,
         "env_keys": sorted(config.env_keys),
     }
-    has_launch_identity = any(
-        (
-            surface.config.command is not None,
-            bool(surface.config.args),
-            surface.config.transport != "stdio",
-            surface.config.url is not None,
-            bool(surface.config.env_keys),
-        )
-    )
-    if not has_launch_identity:
-        return True
+    if not surface.config.command or not {"command", "args"} <= surface.config.model_fields_set:
+        return False
     return all(getattr(surface.config, field) == configured[field] for field in configured)
 
 
@@ -227,7 +224,8 @@ def resolve_configs(
             if surface is not None:
                 source = "pin"
         if surface is None and not pin_withheld:
-            surface, reason = catalog_surface(config, catalog)
+            surface, catalog_reason = catalog_surface(config, catalog)
+            reason = "; ".join(part for part in (reason, catalog_reason) if part) or None
             if surface is not None:
                 source = "catalog"
         if surface is not None:
@@ -241,7 +239,14 @@ def resolve_configs(
                 reason
                 if surface
                 else (
-                    "Matching pin baseline was withheld or lacked verifiable launch identity"
+                    "; ".join(
+                        part
+                        for part in (
+                            reason,
+                            "Matching pin baseline was withheld or lacked verifiable launch identity",
+                        )
+                        if part
+                    )
                     if pin_withheld
                     else reason or "No explicit, pin, or catalog surface"
                 ),
@@ -295,7 +300,28 @@ def load_config(
         )
     if input_paths is not None:
         input_paths.extend(CATALOG / name for name in CATALOG_FILES.values())
-    return resolve_configs(_read_configs(path), explicit, pins_dir)
+    errors: list[ConfigParseError] = []
+    configs = _read_configs(path, errors)
+    if len({config.name for config in configs}) != len(configs):
+        raise AmbiguousInput("duplicate server names across config maps are ambiguous")
+    unused = set(explicit) - {config.name for config in configs} - {error.server_name for error in errors}
+    if unused:
+        raise AmbiguousInput("surfaces mapping contains an unknown server name")
+    resolved = resolve_configs(configs, explicit, pins_dir)
+    resolved.extend(
+        ConfiguredServer(
+            error.server_name or "<unknown entry>",
+            None,
+            reason=(
+                "Malformed server entry (ConfigParseError)"
+                if error.finding_type == "malformed_server_entry"
+                else "Config parse issue (ConfigParseError)"
+            ),
+            parse_error=True,
+        )
+        for error in errors
+    )
+    return resolved
 
 
 def pair_servers(

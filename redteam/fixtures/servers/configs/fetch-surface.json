@@ -1,1 +1,15 @@
-{"server_name":"fetch","source":"fixture","tools":[{"name":"fetch_url","description":"Fetch a URL.","input_schema":{}}]}
+{
+  "config": {
+    "args": [],
+    "command": "synthetic-fetch"
+  },
+  "server_name": "fetch",
+  "source": "fixture",
+  "tools": [
+    {
+      "description": "Fetch a URL.",
+      "input_schema": {},
+      "name": "fetch_url"
+    }
+  ]
+}
