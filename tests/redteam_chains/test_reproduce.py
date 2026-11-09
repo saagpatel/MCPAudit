@@ -43,6 +43,11 @@ def test_nested_sandbox_refusal_is_skipped_and_torn_down(
     available.touch()
     monkeypatch.setattr(sys, "platform", "darwin")
     monkeypatch.setattr(reproduce, "SANDBOX_EXEC", available)
+    git = tmp_path / "real-git"
+    git.touch()
+    helpers = tmp_path / "git-core"
+    helpers.mkdir()
+    monkeypatch.setattr(reproduce, "resolve_git_tool", lambda *, cwd: reproduce.GitTool(git, helpers))
     process = MagicMock()
     process.__enter__.return_value = process
     process.returncode = 71
@@ -58,7 +63,7 @@ def test_nested_sandbox_refusal_is_skipped_and_torn_down(
     assert not list(parent.iterdir())
     command = launch.call_args.args[0]
     assert command[0] == str(available)
-    assert command[3] == "/usr/bin/git"
+    assert command[3] == str(git)
     assert launch.call_args.kwargs["start_new_session"] is True
 
 
@@ -73,7 +78,14 @@ def test_timeout_kills_entire_process_group(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr("os.killpg", kill)
     result = reproduce.ReproductionResult("NOT_REPRODUCED")
     with pytest.raises(reproduce._Failed, match="timed out"):
-        reproduce._run_git(tmp_path, ["add", "--", "bait.txt"], "filter:git-add", result, 0.01)
+        reproduce._run_git(
+            tmp_path,
+            ["add", "--", "bait.txt"],
+            "filter:git-add",
+            result,
+            0.01,
+            reproduce.GitTool(tmp_path / "git", tmp_path / "git-core"),
+        )
     kill.assert_called_once_with(process.pid, 9)
     assert result.steps == [reproduce.ReproductionStep("filter:git-add", -9, timed_out=True)]
 
@@ -101,20 +113,189 @@ def test_environment_is_built_from_scratch(monkeypatch: pytest.MonkeyPatch, tmp_
 
 def test_profile_denies_network_write_and_unlisted_exec(tmp_path: Path) -> None:
     root = tmp_path.resolve()
-    profile = reproduce.sandbox_profile(root, root / "canary.sh")
+    git = root / "resolved git"
+    helpers = root / "git core"
+    profile = reproduce.sandbox_profile(root, root / "canary.sh", reproduce.GitTool(git, helpers))
     assert "(deny network*)" in profile
     assert "(deny file-write*)" in profile
     assert "(deny process-exec)" in profile
     assert '(literal "/bin/sh")' in profile
     assert '(literal "/bin/cat")' in profile
+    assert f'(literal "{git}")' in profile
+    assert f'(subpath "{helpers}")' in profile
+    assert f'(literal "{root / "canary.sh"}")' in profile
+    assert "xcrun" not in profile
+    assert "/usr/bin/git" not in profile
     assert '(subpath "/usr/bin")' not in profile
     with pytest.raises(ValueError):
-        reproduce.sandbox_profile(root, root.parent / "outside-script")
+        reproduce.sandbox_profile(root, root.parent / "outside-script", reproduce.GitTool(git, helpers))
+
+
+def test_resolves_and_validates_git_and_helper_paths(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path.resolve()
+    git = root / "toolchain" / "usr" / "bin" / "git"
+    helpers = root / "toolchain" / "usr" / "libexec" / "git-core"
+    git.parent.mkdir(parents=True)
+    git.touch()
+    git.chmod(0o755)
+    helpers.mkdir(parents=True)
+    monkeypatch.setattr(reproduce, "GIT_ROOTS", (root / "toolchain",))
+    calls: list[list[str]] = []
+
+    def resolve(command: list[str], *, cwd: Path) -> str:
+        calls.append(command)
+        return str(git if command[-2:] == ["--find", "git"] else helpers)
+
+    monkeypatch.setattr(reproduce, "_run_resolution_command", resolve)
+    monkeypatch.setattr(reproduce, "XCRUN", git.parent / "xcrun")
+    (git.parent / "xcrun").touch()
+    (git.parent / "xcrun").chmod(0o755)
+    resolved = reproduce.resolve_git_tool(cwd=root)
+    assert resolved == reproduce.GitTool(git, helpers)
+    assert calls == [[str(git.parent / "xcrun"), "--find", "git"], [str(git), "--exec-path"]]
+
+
+def test_rejects_unapproved_or_relative_resolution_paths(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path.resolve()
+    git = root / "outside" / "git"
+    git.parent.mkdir()
+    git.touch()
+    git.chmod(0o755)
+    monkeypatch.setattr(reproduce, "GIT_ROOTS", (root / "approved",))
+    monkeypatch.setattr(reproduce, "_run_resolution_command", lambda command, *, cwd: str(git))
+    monkeypatch.setattr(reproduce, "XCRUN", tmp_path / "xcrun")
+    (tmp_path / "xcrun").touch()
+    (tmp_path / "xcrun").chmod(0o755)
+    with pytest.raises(reproduce._Unavailable, match="outside approved"):
+        reproduce.resolve_git_tool(cwd=root)
+    with pytest.raises(reproduce._Unavailable, match="not absolute"):
+        reproduce._allowed_real_path(Path("relative/git"))
+
+
+def test_rejects_resolved_symlink_outside_approved_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path.resolve()
+    approved = root / "approved"
+    approved.mkdir()
+    outside = root / "outside-git"
+    outside.touch()
+    (approved / "git").symlink_to(outside)
+    monkeypatch.setattr(reproduce, "GIT_ROOTS", (approved,))
+    with pytest.raises(reproduce._Unavailable, match="outside approved"):
+        reproduce._allowed_real_path(approved / "git")
+
+
+def test_falls_back_to_approved_non_shim_git(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path.resolve()
+    git = root / "usr" / "bin" / "git"
+    helpers = root / "usr" / "libexec" / "git-core"
+    git.parent.mkdir(parents=True)
+    git.write_bytes(b"synthetic non-shim executable")
+    git.chmod(0o755)
+    helpers.mkdir(parents=True)
+    monkeypatch.setattr(reproduce, "GIT_ROOTS", (root,))
+    monkeypatch.setattr(reproduce, "GIT_FALLBACK", git)
+    monkeypatch.setattr(reproduce, "XCRUN", tmp_path / "missing-xcrun")
+    calls: list[list[str]] = []
+
+    def resolve(command: list[str], *, cwd: Path) -> str:
+        calls.append(command)
+        return str(helpers)
+
+    monkeypatch.setattr(reproduce, "_run_resolution_command", resolve)
+    assert reproduce.resolve_git_tool(cwd=root) == reproduce.GitTool(git, helpers)
+    assert calls == [[str(git), "--exec-path"]]
+
+
+def test_rejects_xcrun_shim_fallback(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path.resolve()
+    git = root / "usr" / "bin" / "git"
+    git.parent.mkdir(parents=True)
+    git.write_bytes(b"\xfe\xed\xfa\xcf Mach-O xcrun shim")
+    git.chmod(0o755)
+    monkeypatch.setattr(reproduce, "GIT_ROOTS", (root,))
+    monkeypatch.setattr(reproduce, "GIT_FALLBACK", git)
+    monkeypatch.setattr(reproduce, "XCRUN", tmp_path / "missing-xcrun")
+    with pytest.raises(reproduce._Unavailable, match="no approved real Git"):
+        reproduce.resolve_git_tool(cwd=root)
+
+
+@pytest.mark.parametrize("exec_path", ["relative/git-core", "outside"])
+def test_rejects_unapproved_or_relative_helper_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, exec_path: str
+) -> None:
+    root = tmp_path.resolve()
+    toolchain = root / "toolchain"
+    git = toolchain / "usr" / "bin" / "git"
+    git.parent.mkdir(parents=True)
+    git.touch()
+    git.chmod(0o755)
+    if exec_path == "outside":
+        invalid_path = root / "outside" / "git-core"
+        invalid_path.mkdir(parents=True)
+        exec_path = str(invalid_path)
+    monkeypatch.setattr(reproduce, "GIT_ROOTS", (toolchain,))
+    monkeypatch.setattr(reproduce, "GIT_FALLBACK", git)
+    monkeypatch.setattr(reproduce, "XCRUN", tmp_path / "missing-xcrun")
+    monkeypatch.setattr(reproduce, "_run_resolution_command", lambda command, *, cwd: exec_path)
+    with pytest.raises(reproduce._Unavailable, match="not absolute|outside approved"):
+        reproduce.resolve_git_tool(cwd=root)
+
+
+def test_rejects_unavailable_fallback_executable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    root = tmp_path.resolve()
+    git = root / "toolchain" / "usr" / "bin" / "git"
+    git.parent.mkdir(parents=True)
+    git.touch()
+    git.chmod(0o644)
+    monkeypatch.setattr(reproduce, "GIT_ROOTS", (root / "toolchain",))
+    monkeypatch.setattr(reproduce, "GIT_FALLBACK", git)
+    monkeypatch.setattr(reproduce, "XCRUN", tmp_path / "missing-xcrun")
+    with pytest.raises(reproduce._Unavailable, match="no approved real Git"):
+        reproduce.resolve_git_tool(cwd=root)
+
+
+def test_exec_failure_is_not_misreported_as_nested_sandbox_skip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    process = MagicMock()
+    process.__enter__.return_value = process
+    process.returncode = 71
+    process.communicate.return_value = (b"", b"sandbox: deny process-exec: Operation not permitted\n")
+    monkeypatch.setattr(subprocess, "Popen", MagicMock(return_value=process))
+    result = reproduce.ReproductionResult("NOT_REPRODUCED")
+    with pytest.raises(reproduce._Failed, match=r"filter:git-add \(exit code 71\)"):
+        reproduce._run_git(
+            tmp_path,
+            ["add", "--", "bait.txt"],
+            "filter:git-add",
+            result,
+            1,
+            reproduce.GitTool(tmp_path / "git", tmp_path / "git-core"),
+        )
+    assert result.steps == [reproduce.ReproductionStep("filter:git-add", 71)]
+
+
+@pytest.mark.parametrize(
+    "exit_code,stderr",
+    [
+        (0, b"sandbox-exec: sandbox_apply: Operation not permitted\n"),
+        (128, b"sandbox-exec: sandbox_apply: Operation not permitted\n"),
+        (71, b"git: sandbox_apply: Operation not permitted\n"),
+        (71, b"sandbox-exec: execvp: Operation not permitted\n"),
+        (71, b"sandbox-exec: sandbox_apply: Operation not permitted\nother failure\n"),
+    ],
+)
+def test_only_nested_apply_diagnostic_can_skip(exit_code: int, stderr: bytes) -> None:
+    assert not reproduce._is_nested_apply_failure(exit_code, stderr)
 
 
 def _require_sandbox(result: reproduce.ReproductionResult) -> None:
     if result.status == "SKIPPED":
-        assert result.reason in {"sandbox-exec is unavailable", "nested sandbox unavailable"}
+        assert result.reason == "nested sandbox unavailable"
         if result.steps:
             assert result.teardown_confirmed
         pytest.skip(result.reason)
@@ -148,8 +329,9 @@ def test_sandbox_rejects_filter_write_outside_canary(monkeypatch: pytest.MonkeyP
     result = reproduce.reproduce_git_clean_filter(parent=tmp_path / "canaries")
     _require_sandbox(result)
     assert result.status == "NOT_REPRODUCED"
-    assert result.reason == "sandboxed Git failed at filter:git-add"
-    assert any(step.name == "filter:git-add" and step.exit_code != 0 for step in result.steps)
+    git_add_step = next(step for step in result.steps if step.name == "filter:git-add")
+    assert git_add_step.exit_code is not None and git_add_step.exit_code != 0
+    assert result.reason == f"sandboxed Git failed at filter:git-add (exit code {git_add_step.exit_code})"
     assert not outside.exists()
     assert result.teardown_confirmed
     assert not list((tmp_path / "canaries").iterdir())
@@ -162,7 +344,12 @@ def test_repo_indirections_are_rejected(tmp_path: Path, indirection: str) -> Non
     path.parent.mkdir(parents=True)
     path.write_text("synthetic indirection", encoding="utf-8")
     with pytest.raises(reproduce._Failed, match="indirection"):
-        reproduce._check_repo(tmp_path, reproduce.ReproductionResult("NOT_REPRODUCED"), 1)
+        reproduce._check_repo(
+            tmp_path,
+            reproduce.ReproductionResult("NOT_REPRODUCED"),
+            1,
+            reproduce.GitTool(tmp_path / "git", tmp_path / "git-core"),
+        )
 
 
 def test_git_file_and_symlinks_are_rejected(tmp_path: Path) -> None:
@@ -171,9 +358,19 @@ def test_git_file_and_symlinks_are_rejected(tmp_path: Path) -> None:
     (repo / ".git").write_text("gitdir: elsewhere", encoding="utf-8")
     result = reproduce.ReproductionResult("NOT_REPRODUCED")
     with pytest.raises(reproduce._Failed, match="private directory"):
-        reproduce._check_repo(tmp_path, result, 1)
+        reproduce._check_repo(
+            tmp_path,
+            result,
+            1,
+            reproduce.GitTool(tmp_path / "git", tmp_path / "git-core"),
+        )
     (repo / ".git").unlink()
     (repo / ".git").mkdir()
     (repo / "redirect").symlink_to(repo, target_is_directory=True)
     with pytest.raises(reproduce._Failed, match="symlink"):
-        reproduce._check_repo(tmp_path, result, 1)
+        reproduce._check_repo(
+            tmp_path,
+            result,
+            1,
+            reproduce.GitTool(tmp_path / "git", tmp_path / "git-core"),
+        )

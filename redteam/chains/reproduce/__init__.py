@@ -1,7 +1,8 @@
 """Operation-level Git canary. No fixture or MCP server is ever executed.
 
-Every Git process, including initialization and inspection, is sandboxed. The
-only executable payload is our fixed marker-and-cat script in a fresh repo.
+Toolchain resolution runs outside the sandbox. Every repository operation,
+including initialization and inspection, is sandboxed; the only executable
+payload is our fixed marker-and-cat script in a fresh repo.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shlex
 import shutil
 import signal
@@ -21,7 +23,14 @@ from pathlib import Path
 from typing import Literal
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
-GIT = "/usr/bin/git"
+XCRUN = Path("/usr/bin/xcrun")
+GIT_FALLBACK = Path("/usr/bin/git")
+GIT_ROOTS = (
+    Path("/Applications/Xcode.app"),
+    Path("/Library/Developer/CommandLineTools"),
+    Path("/usr/bin"),
+    Path("/opt/homebrew"),
+)
 PREFIX = "mcpaudit-chain-canary-"
 DEMONSTRATION = (
     "Git filter activation via equivalent filesystem writes and git add operations on a canary; "
@@ -59,12 +68,93 @@ class _Failed(Exception):
     pass
 
 
-def sandbox_profile(root: Path, script: Path) -> str:
+@dataclass(frozen=True)
+class GitTool:
+    executable: Path
+    exec_path: Path
+
+
+def _allowed_real_path(path: Path) -> Path:
+    """Resolve and constrain a toolchain path before allowing it in the sandbox."""
+    if not path.is_absolute():
+        raise _Unavailable("Git toolchain path is not absolute")
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        raise _Unavailable("Git toolchain path is unavailable") from exc
+    if not resolved.is_absolute() or not any(
+        resolved == root or root in resolved.parents for root in GIT_ROOTS
+    ):
+        raise _Unavailable("Git toolchain path is outside approved locations")
+    return resolved
+
+
+def _is_xcrun_shim(path: Path) -> bool:
+    """Reject a fallback executable that would try to launch xcrun in the sandbox."""
+    try:
+        data = path.read_bytes()
+    except OSError as exc:
+        raise _Unavailable("Git fallback is unavailable") from exc
+    macho_magics = (
+        b"\xfe\xed\xfa\xce",
+        b"\xce\xfa\xed\xfe",
+        b"\xfe\xed\xfa\xcf",
+        b"\xcf\xfa\xed\xfe",
+        b"\xca\xfe\xba\xbe",
+        b"\xbe\xba\xfe\xca",
+        b"\xca\xfe\xba\xbf",
+        b"\xbf\xba\xfe\xca",
+    )
+    is_macho = data[:4] in macho_magics
+    is_script = data.startswith(b"#!")
+    return (is_macho or is_script) and re.search(rb"\bxcrun\b", data) is not None
+
+
+def _run_resolution_command(command: list[str], *, cwd: Path) -> str:
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            env={"PATH": "/usr/bin:/bin"},
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise _Unavailable("Git toolchain could not be resolved") from exc
+    if completed.returncode != 0:
+        raise _Unavailable("Git toolchain could not be resolved")
+    return completed.stdout.strip()
+
+
+def resolve_git_tool(*, cwd: Path) -> GitTool:
+    """Resolve the real Git executable and its helper directory outside sandbox-exec."""
+    executable_text = ""
+    if XCRUN.is_file() and os.access(XCRUN, os.X_OK):
+        executable_text = _run_resolution_command([str(XCRUN), "--find", "git"], cwd=cwd)
+    if executable_text:
+        executable = _allowed_real_path(Path(executable_text))
+    else:
+        fallback = _allowed_real_path(GIT_FALLBACK)
+        if not os.access(fallback, os.X_OK) or _is_xcrun_shim(fallback):
+            raise _Unavailable("no approved real Git executable is available")
+        executable = fallback
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise _Unavailable("resolved Git executable is unavailable")
+    exec_text = _run_resolution_command([str(executable), "--exec-path"], cwd=cwd)
+    exec_path = _allowed_real_path(Path(exec_text))
+    if not exec_path.is_dir():
+        raise _Unavailable("Git helper directory is unavailable")
+    return GitTool(executable, exec_path)
+
+
+def sandbox_profile(root: Path, script: Path, git_tool: GitTool) -> str:
     """A deny-write/network/exec policy with narrowly scoped exceptions.
 
-    Apple's system Git uses these two libexec locations on supported macOS
-    installations. No shell, PATH lookup, or xcrun is used to find helpers.
-    JSON string escaping is also valid for Seatbelt string literals.
+    Git and its helper directory are resolved and validated before entering
+    the sandbox. JSON string escaping is also valid for Seatbelt literals.
     """
     if not root.is_absolute() or root.resolve() != root or script.parent != root:
         raise ValueError("sandbox paths must be resolved private canary paths")
@@ -75,12 +165,10 @@ def sandbox_profile(root: Path, script: Path) -> str:
         f"(allow file-write* (subpath {quote(str(root))}) "
         '(literal "/dev/null") (literal "/dev/tty"))\n'
         "(deny process-exec)\n"
-        '(allow process-exec (literal "/usr/bin/git") (literal "/bin/sh") '
-        f'(literal "/bin/cat") (literal {quote(str(script))}) '
-        '(literal "/Library/Developer/CommandLineTools/usr/bin/git") '
-        '(literal "/Applications/Xcode.app/Contents/Developer/usr/bin/git") '
-        '(subpath "/Library/Developer/CommandLineTools/usr/libexec/git-core") '
-        '(subpath "/Applications/Xcode.app/Contents/Developer/usr/libexec/git-core"))\n'
+        f"(allow process-exec (literal {quote(str(git_tool.executable))}) "
+        f"(subpath {quote(str(git_tool.exec_path))}) "
+        '(literal "/bin/sh") '
+        f'(literal "/bin/cat") (literal {quote(str(script))}))\n'
     )
 
 
@@ -99,12 +187,19 @@ def canary_environment(root: Path) -> dict[str, str]:
     }
 
 
-def _run_git(root: Path, args: list[str], name: str, result: ReproductionResult, timeout: float) -> str:
+def _run_git(
+    root: Path,
+    args: list[str],
+    name: str,
+    result: ReproductionResult,
+    timeout: float,
+    git_tool: GitTool,
+) -> str:
     command = [
         str(SANDBOX_EXEC),
         "-f",
         str(root / "sandbox.sb"),
-        GIT,
+        str(git_tool.executable),
         "-C",
         str(root / "repo"),
         "-c",
@@ -138,16 +233,22 @@ def _run_git(root: Path, args: list[str], name: str, result: ReproductionResult,
                 pass  # The process group already exited.
             process.communicate()
             result.steps.append(ReproductionStep(name, process.returncode, timed_out=True))
-            raise _Failed("sandboxed Git timed out") from None
+            raise _Failed(f"sandboxed Git timed out at {name} (exit code {process.returncode})") from None
     result.steps.append(ReproductionStep(name, process.returncode))
-    if b"sandbox_apply: Operation not permitted" in stderr:
+    if _is_nested_apply_failure(process.returncode, stderr):
         raise _Unavailable("nested sandbox unavailable")
     if process.returncode != 0:
-        raise _Failed(f"sandboxed Git failed at {name}")
+        raise _Failed(f"sandboxed Git failed at {name} (exit code {process.returncode})")
     return stdout.decode("utf-8", errors="strict")
 
 
-def _check_repo(root: Path, result: ReproductionResult, timeout: float) -> None:
+def _is_nested_apply_failure(returncode: int | None, stderr: bytes) -> bool:
+    """Match sandbox-exec's own apply EPERM diagnostic, never ordinary denials."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    return returncode == 71 and lines == [b"sandbox-exec: sandbox_apply: Operation not permitted"]
+
+
+def _check_repo(root: Path, result: ReproductionResult, timeout: float, git_tool: GitTool) -> None:
     repo = root / "repo"
     git_dir = repo / ".git"
     if not git_dir.is_dir() or git_dir.is_symlink():
@@ -159,7 +260,9 @@ def _check_repo(root: Path, result: ReproductionResult, timeout: float) -> None:
             raise _Failed("unexpected Git indirection in canary")
     if (repo / ".gitmodules").exists():
         raise _Failed("unexpected submodules in canary")
-    config = _run_git(root, ["config", "--local", "--name-only", "--list"], "verify-config", result, timeout)
+    config = _run_git(
+        root, ["config", "--local", "--name-only", "--list"], "verify-config", result, timeout, git_tool
+    )
     allowed = {
         "core.repositoryformatversion",
         "core.filemode",
@@ -175,7 +278,7 @@ def _check_repo(root: Path, result: ReproductionResult, timeout: float) -> None:
         ("--absolute-git-dir", git_dir),
         ("--git-common-dir", git_dir),
     ):
-        actual = _run_git(root, ["rev-parse", option], f"verify-{option[2:]}", result, timeout)
+        actual = _run_git(root, ["rev-parse", option], f"verify-{option[2:]}", result, timeout, git_tool)
         candidate = Path(actual.strip())
         if not candidate.is_absolute():
             candidate = repo / candidate
@@ -201,7 +304,9 @@ def _script(marker: Path) -> str:
     return f"#!/bin/sh\nset -eu\n: > {shlex.quote(str(marker))}\n/bin/cat\n"
 
 
-def _case(parent: Path, control: Control, result: ReproductionResult, timeout: float) -> None:
+def _case(
+    parent: Path, control: Control, result: ReproductionResult, timeout: float, git_tool: GitTool
+) -> None:
     root = Path(tempfile.mkdtemp(prefix=PREFIX, dir=parent))
     try:
         # mkdtemp's 0700 is required, not merely assumed from the current umask.
@@ -211,7 +316,7 @@ def _case(parent: Path, control: Control, result: ReproductionResult, timeout: f
             (root / directory).mkdir(mode=0o700)
         script = root / "canary.sh"
         marker = root / "marker"
-        (root / "sandbox.sb").write_text(sandbox_profile(root, script), encoding="utf-8")
+        (root / "sandbox.sb").write_text(sandbox_profile(root, script, git_tool), encoding="utf-8")
         _run_git(
             root,
             [
@@ -224,8 +329,9 @@ def _case(parent: Path, control: Control, result: ReproductionResult, timeout: f
             f"{control}:init",
             result,
             timeout,
+            git_tool,
         )
-        _check_repo(root, result, timeout)
+        _check_repo(root, result, timeout, git_tool)
         result.isolation_checks[f"{control}:private-repo"] = True
         # Equivalent filesystem-server operations: literal synthetic writes only.
         script.write_text(_script(marker), encoding="utf-8")
@@ -251,11 +357,11 @@ def _case(parent: Path, control: Control, result: ReproductionResult, timeout: f
             result.marker_before = marker_before
         if marker_before:
             raise _Failed("marker already existed before git add")
-        _run_git(root, ["add", "--", "bait.txt"], f"{control}:git-add", result, timeout)
+        _run_git(root, ["add", "--", "bait.txt"], f"{control}:git-add", result, timeout, git_tool)
         marker_after = marker.is_file() and not marker.is_symlink()
         if control == "filter":
             result.marker_after = marker_after
-        indexed = _run_git(root, ["show", ":bait.txt"], f"{control}:verify-index", result, timeout)
+        indexed = _run_git(root, ["show", ":bait.txt"], f"{control}:verify-index", result, timeout, git_tool)
         correct_blob = indexed == bait.decode()
         if control == "filter":
             result.index_has_bait = correct_blob
@@ -313,8 +419,9 @@ def reproduce_git_clean_filter(*, parent: Path | None = None, timeout: float = 1
         if base.is_symlink() or base.absolute() != base.resolve():
             raise _Failed("canary parent must not contain symlinks")
         base = base.resolve()
+        git_tool = resolve_git_tool(cwd=base)
         for control in ("filter", "no-filter-config", "no-attributes"):
-            _case(base, control, result, timeout)
+            _case(base, control, result, timeout, git_tool)
         result.status = "REPRODUCED"
     except _Unavailable as exc:
         result.status, result.reason = "SKIPPED", str(exc)
