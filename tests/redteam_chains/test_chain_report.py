@@ -65,6 +65,19 @@ def test_cli_writes_both_reports(tmp_path: Path, capsys: pytest.CaptureFixture[s
     )
     assert capsys.readouterr().out == md_path.read_text()
     assert json.loads(json_path.read_text())["ranked"][0]["template"] == "git-clean-filter"
+    markdown = md_path.read_text()
+    assert "| Steps |" in markdown
+    tools = r"filesystem.create_directory\|edit_file\|move_file\|write_file"
+    assert f"{tools} → git.git_add" in markdown
+    assert f"{tools} → git.git_commit" in markdown
+    rows = json.loads(json_path.read_text())["ranked"]
+    assert [row["template"] for row in rows] == ["git-clean-filter", "git-hook"]
+    assert rows[0]["alternative_tool_pairs"] == [
+        {"writer_tool": "create_directory", "executor_tool": "git_add"},
+        {"writer_tool": "edit_file", "executor_tool": "git_add"},
+        {"writer_tool": "move_file", "executor_tool": "git_add"},
+        {"writer_tool": "write_file", "executor_tool": "git_add"},
+    ]
 
 
 def test_only_top_supported_chain_reproduced(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -122,12 +135,20 @@ def test_cli_returns_failure_for_failed_canary(
     assert "NOT_REPRODUCED" in capsys.readouterr().out
 
 
-def test_markdown_and_terminal_names_are_inert() -> None:
+def test_markdown_escapes_separators_and_strips_terminal_controls() -> None:
     report = build_report([ConfiguredServer("odd|<tag>\x1b[2J\nname", None)])
     markdown = to_markdown(report)
     assert "\x1b" not in markdown
-    assert "<tag>" not in markdown
-    assert "odd&#124;&lt;tag&gt;" in markdown
+    assert r"odd\|<tag> [2J name" in markdown
+
+
+def test_markdown_preserves_quotes_and_markup_without_html_entities() -> None:
+    report = build_report([ConfiguredServer('writer\'s "tool" & <tag> `name`|next\r\nrow', None)])
+    markdown = to_markdown(report)
+    assert 'writer\'s "tool" & <tag> `name`\\|next  row' in markdown
+    assert "&#" not in markdown
+    assert "&amp;" not in markdown
+    assert "&lt;" not in markdown
 
 
 def test_cli_rejects_output_overwriting_config(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

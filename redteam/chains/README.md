@@ -62,7 +62,9 @@ automaticity, and prerequisites. Register additional templates explicitly.
 The ranker adds automaticity and path-overlap evidence, then subtracts steps,
 prerequisites, and conditional labels. It returns the explanation with every
 score and uses stable tie-breaking. Unknown scope is not proof of disjointness.
-Multiple rows can represent different writer tools for the same server pair.
+Each writer/executor server pair and template has one ranked row, scored by its
+best member. Reports retain the alternative tool pairs and show them in the Steps
+column; JSON steps describe the selected best member.
 Rank is a review priority, not a probability, vulnerability verdict, or claim
 that an installed server permits the operations.
 
@@ -81,16 +83,22 @@ and verifies the repository toplevel, Git directory, and common directory before
 writing artifacts. The fixed script creates one marker and passes stdin through
 `/bin/cat`; fixtures and generated twin programs are never executed.
 
-Every Git invocation, including init and inspection, uses absolute `/usr/bin/git`,
-explicit `-C`, and macOS `/usr/bin/sandbox-exec`. Its environment is built from an
-allowlist: HOME, XDG_CONFIG_HOME, and TMPDIR inside the canary; system/global Git
+Before entering the sandbox, the reproducer resolves Git once with
+`/usr/bin/xcrun --find git` and obtains its helper directory with `git --exec-path`.
+A non-shim `/usr/bin/git` is the fallback. Both paths must resolve beneath
+`/Applications/Xcode.app/`, `/Library/Developer/CommandLineTools/`, `/usr/bin/`,
+or `/opt/homebrew/`; unavailable or unapproved toolchains yield SKIPPED.
+Every repository operation, including init and inspection, invokes that resolved
+Git directly with explicit `-C` and macOS `/usr/bin/sandbox-exec`. Its environment
+is built from an allowlist: HOME, XDG_CONFIG_HOME, and TMPDIR inside the canary; system/global Git
 config and attributes disabled; prompts disabled; PATH fixed to `/usr/bin:/bin`.
 Hooks, fsmonitor, external attributes, commit signing, and credential helpers are
 disabled on each invocation. The profile denies network, denies writes outside
 the canary (except `/dev/null` and `/dev/tty`), and allows execution only of Git,
-its fixed Apple Git executable/libexec locations, `/bin/sh`, `/bin/cat`, and the
-canary script. Each invocation has a ten-second limit; timeout kills its process
-group. Containment is never replaced with an unsandboxed fallback.
+its resolved helper subpath, `/bin/sh`, `/bin/cat`, and the canary script. xcrun
+is never allowed inside the sandbox. Each invocation has a ten-second limit;
+timeout kills its process group. Containment is never replaced with an
+unsandboxed fallback.
 
 Success requires no marker before staging, a marker afterwards, exit zero, and
 the exact bait bytes in the index. Fresh negative controls omit filter config

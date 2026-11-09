@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import html
 import json
 import unicodedata
 from dataclasses import asdict
@@ -27,6 +26,7 @@ def _source(server: ConfiguredServer) -> str:
 
 def _chain(row: RankedChain, rank: int) -> dict[str, object]:
     chain = row.chain
+    pairs = sorted({(member.writer_label.tool, member.executor_label.tool) for member in row.alternatives})
     return {
         "rank": rank,
         "writer": chain.writer.name,
@@ -40,13 +40,17 @@ def _chain(row: RankedChain, rank: int) -> dict[str, object]:
                 (*chain.preconditions,)
                 + tuple(
                     label.condition
-                    for label in (chain.writer_label, chain.executor_label)
+                    for member in row.alternatives
+                    for label in (member.writer_label, member.executor_label)
                     if label.condition is not None
                 )
             )
         ),
         "surface_sources": {"writer": _source(chain.writer), "executor": _source(chain.executor)},
         "steps": [asdict(step) for step in chain.steps],
+        "alternative_tool_pairs": [
+            {"writer_tool": writer, "executor_tool": executor} for writer, executor in pairs
+        ],
     }
 
 
@@ -108,11 +112,24 @@ def to_json(report: dict[str, object]) -> str:
 def _cell(value: object) -> str:
     # Configured names and tool names may be untrusted terminal/Markdown text.
     text = "".join(char if not unicodedata.category(char).startswith("C") else " " for char in str(value))
-    return html.escape(text, quote=True).replace("|", "&#124;").replace("`", "&#96;")
+    return text.replace("|", r"\|")
 
 
 def _items(value: object) -> list[object]:
     return list(value) if isinstance(value, list) else []
+
+
+def _steps(row: dict[str, object]) -> str:
+    by_executor: dict[str, set[str]] = {}
+    for pair in _items(row["alternative_tool_pairs"]):
+        if isinstance(pair, dict):
+            writer, executor = pair.get("writer_tool"), pair.get("executor_tool")
+            if isinstance(writer, str) and isinstance(executor, str):
+                by_executor.setdefault(executor, set()).add(writer)
+    return "; ".join(
+        f"{row['writer']}.{'|'.join(sorted(writers))} → {row['executor']}.{executor}"
+        for executor, writers in sorted(by_executor.items())
+    )
 
 
 def to_markdown(report: dict[str, object]) -> str:
@@ -123,8 +140,9 @@ def to_markdown(report: dict[str, object]) -> str:
         "",
         _cell(report["limitations"]),
         "",
-        "| Rank | Writer → executor | Template | Score + explanation | Preconditions | Surface sources |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Rank | Writer → executor | Template | Steps | Score + explanation | "
+        "Preconditions | Surface sources |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
     ]
     for row in _items(report["ranked"]):
         if not isinstance(row, dict):
@@ -139,7 +157,8 @@ def to_markdown(report: dict[str, object]) -> str:
         conditions = "; ".join(_cell(item) for item in _items(row["preconditions"]))
         lines.append(
             f"| {_cell(row['rank'])} | {_cell(row['writer'])} → {_cell(row['executor'])} | "
-            f"{_cell(row['template'])} | {_cell(row['score'])}: {explanation} | {conditions} | "
+            f"{_cell(row['template'])} | {_cell(_steps(row))} | "
+            f"{_cell(row['score'])}: {explanation} | {conditions} | "
             f"{source_text} |"
         )
     unknown = ", ".join(_cell(name) for name in _items(report["unknown_surfaces"]))
