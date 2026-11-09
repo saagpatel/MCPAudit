@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from typing import Literal
 
+from mcp_audit.agent_text import AgentText, agent_visible_text
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.egress import EgressDetector
 from mcp_audit.escalation import EscalationAnalyzer
@@ -23,6 +24,8 @@ from mcp_audit.models import (
     IntegrityFinding,
     PackageVerifyFinding,
     ProvenanceFinding,
+    ResourceInfo,
+    ScanWarning,
     ServerAudit,
     ShadowingFinding,
     SsrfFinding,
@@ -35,6 +38,7 @@ from mcp_audit.provenance import ProvenanceAnalyzer
 from mcp_audit.schema_rules import scan_tool_schema
 from mcp_audit.shadowing import ShadowingAnalyzer
 from mcp_audit.ssrf import SsrfDetector
+from mcp_audit.text_limits import bounded_text
 from mcp_audit.trifecta import TrifectaAnalyzer
 from redteam.surface import ServerSurface
 
@@ -52,7 +56,7 @@ DetectorKey = Literal[
     "integrity",
     "pkgverify",
 ]
-DetectorState = Literal["completed", "not_run", "disabled"]
+DetectorState = Literal["completed", "not_run", "disabled", "incomplete"]
 
 DETECTOR_KEYS: tuple[DetectorKey, ...] = (
     "permissions",
@@ -179,6 +183,42 @@ def _set_status(
     result.statuses[key] = DetectorStatus(state=state, reason=reason)
 
 
+def _finish(result: AdapterResult, key: DetectorKey, reasons: list[str]) -> None:
+    if reasons:
+        _set_status(result, key, "incomplete", "; ".join(sorted(set(reasons))))
+    else:
+        _set_status(result, key, "completed")
+
+
+def _text_reasons(texts: list[AgentText]) -> list[str]:
+    return [reason for text in texts for reason in text.incomplete]
+
+
+def _resource_text_reasons(resources: list[ResourceInfo]) -> list[str]:
+    # PermissionAnalyzer bounds resource keyword sources with bounded_text;
+    # unlike tool AgentText, that API does not expose a truncation collector.
+    return [
+        "resource text truncated by byte limit"
+        for resource in resources
+        for text in (resource.uri, resource.name or "", resource.description or "")
+        if bounded_text(text) != text
+    ]
+
+
+def _ssrf_reasons(tools: list[ToolInfo], findings: list[SsrfFinding]) -> list[str]:
+    # SSRF publishes traversal coverage in evidence even when a URL parameter
+    # was found (and pattern_name is therefore not schema_traversal_incomplete).
+    reasons = [
+        evidence
+        for finding in findings
+        for evidence in finding.evidence
+        if evidence.startswith("schema traversal incomplete:")
+    ]
+    if any(bounded_text(text) != text for tool in tools for text in (tool.name, tool.description or "")):
+        reasons.append("SSRF fetch-verb text truncated by byte limit")
+    return reasons
+
+
 def _audit(surface: ServerSurface, *, tools: list[ToolInfo] | None = None) -> ServerAudit:
     return ServerAudit(
         server=surface.to_config(),
@@ -206,6 +246,7 @@ def run_detectors(
     if unknown_disabled:
         raise ValueError(f"unknown detector key(s): {', '.join(sorted(unknown_disabled))}")
     current_tools = surface.to_tools()
+    current_texts = [agent_visible_text(tool) for tool in current_tools]
     resources = surface.to_resources()
     current_audit = _audit(surface, tools=current_tools)
 
@@ -217,17 +258,28 @@ def run_detectors(
 
     if enabled("permissions"):
         permission_analyzer = PermissionAnalyzer()
-        permission_findings: list[object] = list(permission_analyzer.analyze_server(current_tools))
+        permission_reasons = _text_reasons(current_texts) + _resource_text_reasons(resources)
+        permission_findings: list[object] = list(
+            permission_analyzer.analyze_server(
+                current_tools, incomplete_reasons=permission_reasons, agent_texts=current_texts
+            )
+        )
         permission_findings.extend(permission_analyzer.analyze_capabilities([], resources))
-        for tool in current_tools:
-            permission_findings.extend(permission_analyzer.analyze_annotation_contradictions(tool))
+        for tool, text in zip(current_tools, current_texts, strict=True):
+            permission_findings.extend(
+                permission_analyzer.analyze_annotation_contradictions(tool, agent_text=text)
+            )
         _add(result, "permissions", permission_findings)
-        _set_status(result, "permissions", "completed")
+        _finish(result, "permissions", permission_reasons)
 
     if enabled("injection"):
         detector = InjectionDetector()
-        _add(result, "injection", detector.scan_server(current_tools, resources=resources))
-        _set_status(result, "injection", "completed")
+        _add(
+            result,
+            "injection",
+            detector.scan_server(current_tools, resources=resources, agent_texts=current_texts),
+        )
+        _finish(result, "injection", _text_reasons(current_texts))
 
     ssrf_enabled = enabled("ssrf")
     # Egress consumes SSRF findings even when the public SSRF check is disabled.
@@ -240,9 +292,10 @@ def run_detectors(
             finding for resource in resources for finding in ssrf_detector.scan_resource(resource)
         )
         current_audit.ssrf_findings = ssrf_findings
+        ssrf_reasons = _ssrf_reasons(current_tools, ssrf_findings)
         if ssrf_enabled:
             _add(result, "ssrf", ssrf_findings)
-            _set_status(result, "ssrf", "completed")
+            _finish(result, "ssrf", ssrf_reasons)
 
     if enabled("egress"):
         # Egress is static: use an empty allowlist so declared destinations are
@@ -250,12 +303,19 @@ def run_detectors(
         egress_findings = EgressDetector(set()).scan_server(current_audit)
         current_audit.egress_findings = egress_findings
         _add(result, "egress", egress_findings)
-        _set_status(result, "egress", "completed")
+        _finish(result, "egress", ssrf_reasons)
 
     if enabled("schema"):
-        schema_findings = [finding for tool in current_tools for finding in scan_tool_schema(tool)]
+        schema_reasons: list[str] = []
+        schema_findings = [
+            finding
+            for tool in current_tools
+            for finding in scan_tool_schema(
+                tool, server_url=surface.config.url, incomplete_reasons=schema_reasons
+            )
+        ]
         _add(result, "schema", schema_findings)
-        _set_status(result, "schema", "completed")
+        _finish(result, "schema", schema_reasons)
 
     audits = [_audit(member) for member in fleet]
     if enabled("trifecta"):
@@ -264,11 +324,17 @@ def run_detectors(
         else:
             trifecta_analyzer = TrifectaAnalyzer()
             fleet_audits = [current_audit, *audits]
+            trifecta_reasons: list[str] = []
             for audit in fleet_audits:
-                audit.permissions = PermissionAnalyzer().analyze_server(audit.tools)
+                texts = [agent_visible_text(tool) for tool in audit.tools]
+                trifecta_reasons.extend(_text_reasons(texts))
+                trifecta_reasons.extend(_resource_text_reasons(audit.resources))
+                audit.permissions = PermissionAnalyzer().analyze_server(
+                    audit.tools, incomplete_reasons=trifecta_reasons, agent_texts=texts
+                )
                 audit.capability_findings = PermissionAnalyzer().analyze_capabilities([], audit.resources)
                 audit.injection_findings = InjectionDetector().scan_server(
-                    audit.tools, resources=audit.resources
+                    audit.tools, resources=audit.resources, agent_texts=texts
                 )
                 ssrf_detector = SsrfDetector()
                 audit.ssrf_findings = [
@@ -278,13 +344,14 @@ def run_detectors(
                     for resource in audit.resources
                     for finding in ssrf_detector.scan_resource(resource)
                 ]
+                trifecta_reasons.extend(_ssrf_reasons(audit.tools, audit.ssrf_findings))
                 audit.trifecta_findings = trifecta_analyzer.analyze_server(audit)
             trifecta_findings: list[TrifectaFinding] = [
                 finding for audit in fleet_audits for finding in audit.trifecta_findings
             ]
             trifecta_findings.extend(trifecta_analyzer.analyze_fleet(fleet_audits))
             _add(result, "trifecta", trifecta_findings)
-            _set_status(result, "trifecta", "completed")
+            _finish(result, "trifecta", trifecta_reasons)
 
     if enabled("shadowing"):
         if not fleet:
@@ -323,11 +390,15 @@ def run_detectors(
         if baseline is None:
             _set_status(result, "escalation", "not_run", "baseline surface is required")
         else:
+            baseline_tools = baseline.to_tools()
+            escalation_reasons = _text_reasons(
+                [agent_visible_text(tool) for tool in [*baseline_tools, *current_tools]]
+            )
             escalation_findings: list[EscalationFinding] = EscalationAnalyzer().analyze_server(
-                surface.server_name, baseline.to_tools(), current_tools
+                surface.server_name, baseline_tools, current_tools, incomplete_reasons=escalation_reasons
             )
             _add(result, "escalation", escalation_findings)
-            _set_status(result, "escalation", "completed")
+            _finish(result, "escalation", escalation_reasons)
 
     if enabled("provenance"):
         if baseline is None:
@@ -354,8 +425,11 @@ def run_detectors(
         else:
             expected = {_relative_artifact(name): digest for name, digest in integrity.artifacts.items()}
             current = {_relative_artifact(name): content for name, content in integrity.current_files.items()}
-            temp_root = _temp_root()
-            with tempfile.TemporaryDirectory(prefix="integrity-", dir=temp_root) as tmp:
+            integrity_warnings: list[ScanWarning] = []
+            integrity_reasons: list[str] = []
+            # Do not inherit the checkout location: a hidden home directory is
+            # intentionally excluded by IntegrityAnalyzer's sensitive-path policy.
+            with tempfile.TemporaryDirectory(prefix="integrity-") as tmp:
                 root = Path(tmp).resolve()
                 for relative, content in current.items():
                     target = (root / relative).resolve()
@@ -365,10 +439,13 @@ def run_detectors(
                     target.write_bytes(content)
                 artifact_hashes = {str(root / name): digest for name, digest in expected.items()}
                 integrity_findings: list[IntegrityFinding] = IntegrityAnalyzer().analyze_server(
-                    surface.server_name, artifact_hashes
+                    surface.server_name, artifact_hashes, warnings=integrity_warnings
                 )
+                integrity_reasons.extend(warning.message for warning in integrity_warnings)
                 for finding in integrity_findings:
                     relative_path = Path(finding.artifact_path).relative_to(root).as_posix()
+                    if finding.current_hash is None and PurePosixPath(relative_path) in current:
+                        integrity_reasons.append("supplied artifact could not be hashed")
                     result.findings.append(
                         AdapterFinding(
                             check_id=_check_id(finding, "integrity"),
@@ -378,7 +455,7 @@ def run_detectors(
                             evidence=_evidence(finding).replace(str(root), "<integrity>"),
                         )
                     )
-            _set_status(result, "integrity", "completed")
+            _finish(result, "integrity", integrity_reasons)
 
     if enabled("pkgverify"):
         if package_fetch is None:
