@@ -59,6 +59,8 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    env:
+      PROOFOS_POSTGRES_BIN: /usr/lib/postgresql/16/bin
     strategy:
       fail-fast: false
       matrix:

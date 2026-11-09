@@ -20,6 +20,7 @@ def test_postgres_ci_uses_local_binaries_without_service_container() -> None:
     job = jobs["test"]
     assert isinstance(job, dict)
     assert "services" not in job
+    assert job.get("env", {}).get("PROOFOS_POSTGRES_BIN") == "/usr/lib/postgresql/16/bin"
 
     steps = job["steps"]
     assert isinstance(steps, list)
