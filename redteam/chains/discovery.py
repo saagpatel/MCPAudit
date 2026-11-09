@@ -4,25 +4,33 @@ from __future__ import annotations
 
 import importlib
 import inspect
+import json
+import tomllib
 from collections.abc import Callable
 from dataclasses import is_dataclass, replace
 from pathlib import Path
 from types import ModuleType
+from typing import Literal
 
 from mcp_audit.models import ClientType, ServerConfig, TransportType
 from redteam.catalog import CATALOG, CATALOG_FILES
 from redteam.chains import ShadowImportError as ShadowImportError
 from redteam.chains import ensure_repo_import
-from redteam.chains.dxt import extension_directory, metadata_inputs
+from redteam.chains.dxt import DxtCollector, extension_directory, metadata_inputs, read_regular_file
 from redteam.chains.pairs import ConfiguredServer, resolve_configs
 
 DEFAULT_COLLECTORS = (
     ("claude_desktop", "ClaudeDesktopCollector"),
     ("codex", "CodexCollector"),
-    ("dxt", "DxtCollector"),
     ("project_mcp", "ProjectMcpJsonCollector"),
 )
-KNOWN_SOURCE_KEYS = frozenset(module for module, _ in DEFAULT_COLLECTORS) | {"claude_code"}
+KNOWN_SOURCE_KEYS = frozenset(module for module, _ in DEFAULT_COLLECTORS) | {"claude_code", "dxt"}
+
+
+class DiscoveredConfig(ServerConfig):
+    """Keep unavailable discovery metadata distinct from an explicit empty list."""
+
+    header_keys_state: Literal["AVAILABLE", "UNAVAILABLE"]
 
 
 class DiscoveryServers(list[ConfiguredServer]):
@@ -67,7 +75,7 @@ def _strings(value: object, field: str) -> list[str]:
     return [str(item) for item in value]
 
 
-def _server(entry: object) -> ServerConfig:
+def _server(entry: object) -> DiscoveredConfig:
     name: object = getattr(entry, "name", None)
     spec: object = getattr(entry, "spec", None)
     if not isinstance(name, str) or not name or spec is None:
@@ -81,7 +89,7 @@ def _server(entry: object) -> ServerConfig:
         raise ValueError("shadow-mcp returned invalid url")
     if transport not in ("stdio", "http", "sse"):
         raise ValueError("shadow-mcp returned unsupported transport")
-    return ServerConfig(
+    return DiscoveredConfig(
         name=name,
         client=ClientType.CLAUDE_CODE,
         config_path="<shadow-mcp>",
@@ -91,6 +99,7 @@ def _server(entry: object) -> ServerConfig:
         transport=TransportType(str(transport)),
         env_keys=sorted(set(_strings(getattr(spec, "env_keys", None), "env_keys"))),
         headers_keys=sorted(set(_strings(getattr(spec, "headers_keys", []), "headers_keys"))),
+        header_keys_state="UNAVAILABLE" if transport in ("http", "sse") else "AVAILABLE",
     )
 
 
@@ -128,25 +137,52 @@ def _protect_configured_paths(
     include_claude_code: bool,
     input_paths: list[Path],
     input_directories: list[Path],
-) -> None:
+) -> list[tuple[str, Path]]:
     """Register collector inputs even if parsing fails or returns no servers."""
-    input_paths.extend(_path(paths, field) for field in ("claude_desktop_config", "codex_config"))
+    selected = [(field, _path(paths, field)) for field in ("claude_desktop_config", "codex_config")]
     profiles: object = getattr(paths, "codex_profile_configs", None)
     if not isinstance(profiles, list) or any(not isinstance(item, Path) for item in profiles):
         raise ShadowImportError("incompatible shadow-mcp: invalid DiscoveryPaths.codex_profile_configs")
-    input_paths.extend(profiles)
+    selected.extend(("codex_profile_config", path) for path in profiles)
     projects: object = getattr(paths, "projects_root", None)
     depth: object = getattr(paths, "project_glob_depth", None)
     if (projects is not None and not isinstance(projects, Path)) or type(depth) is not int:
         raise ShadowImportError("incompatible shadow-mcp: invalid DiscoveryPaths project settings")
     if isinstance(projects, Path):
-        input_paths.extend(_project_files(projects, depth))
+        selected.extend(("project_config", path) for path in _project_files(projects, depth))
     if include_claude_code:
-        input_paths.append(_path(paths, "claude_json"))
+        selected.append(("claude_code_config", _path(paths, "claude_json")))
+    input_paths.extend(path for _, path in selected)
     extensions = _path(paths, "claude_extensions_dir")
     settings = extensions.parent / "Claude Extensions Settings"
     input_directories.extend([extensions, settings])
     input_paths.extend(metadata_inputs(extensions, settings))
+    return selected
+
+
+def _validate_config_files(selected: list[tuple[str, Path]]) -> tuple[list[str], set[str]]:
+    """Detect errors hidden by fail-soft collectors without retaining values."""
+    errors: list[str] = []
+    blocked: set[str] = set()
+    sources = {
+        "claude_desktop_config": "claude_desktop",
+        "codex_config": "codex",
+        "codex_profile_config": "codex",
+        "project_config": "project_mcp",
+        "claude_code_config": "claude_code",
+    }
+    for kind, path in sorted(selected):
+        try:
+            content = read_regular_file(path)
+            document: object = tomllib.loads(content) if path.suffix == ".toml" else json.loads(content)
+            if not isinstance(document, dict):
+                raise ValueError("config must be an object")
+        except FileNotFoundError:
+            continue  # Absent inputs are normal, including absent parent dirs.
+        except (OSError, UnicodeError, ValueError, RecursionError) as exc:
+            errors.append(f"{kind} collector error ({type(exc).__name__})")
+            blocked.add(sources[kind])
+    return errors, blocked
 
 
 def _project_files(root: Path, depth: int) -> list[Path]:
@@ -223,10 +259,18 @@ def discover_servers(
         except (AttributeError, TypeError) as exc:
             raise ShadowImportError("incompatible shadow-mcp: DiscoveryPaths DXT fields") from exc
     dxt_dir = _path(paths, "claude_extensions_dir")
-    _protect_configured_paths(paths, include_claude_code, input_paths, input_directories)
+    config_files = _protect_configured_paths(paths, include_claude_code, input_paths, input_directories)
     if validate_inputs is not None:
         validate_inputs()
-    selected = [factory(paths) for factory in factories if callable(factory)]
+    validation_errors, blocked = _validate_config_files(config_files)
+    # Never hand a rejected file to a fail-soft collector's unbounded reader.
+    selected = [
+        factory(paths)
+        for (module, _), factory in zip(names, factories, strict=True)
+        if callable(factory) and module not in blocked
+    ]
+    dxt_collector = DxtCollector(dxt_dir)
+    selected.insert(2, dxt_collector)
     result: object = discover(paths, include_processes=False, include_cli=False, collectors=selected)
     entries: object = getattr(result, "servers", None)
     counts: object = getattr(result, "source_counts", None)
@@ -240,6 +284,8 @@ def discover_servers(
     if unknown_count:
         notes.append(f"shadow-mcp source (unrecognized): {unknown_count}")
     collector_errors = ["shadow-mcp collector error (details withheld)" for _ in _strings(errors, "errors")]
+    collector_errors.extend(validation_errors)
+    collector_errors.extend(dxt_collector.errors)
     notes.extend(collector_errors)
     source_counts = {key: counts[key] for key in sorted(counts) if key in KNOWN_SOURCE_KEYS}
     if unknown_count:
@@ -275,7 +321,7 @@ def discover_servers(
             tuple(config.env_keys),
         ),
     )
-    unique: dict[tuple[str, str | None, tuple[str, ...], str | None], ServerConfig] = {}
+    unique: dict[tuple[str, str | None, tuple[str, ...], str | None], DiscoveredConfig] = {}
     for config in configs:
         key = (config.name, config.command, tuple(config.args), config.url)
         previous_config = unique.get(key)

@@ -109,12 +109,14 @@ def test_discovery_allowlist_mapping_and_notes(shadow: Path) -> None:
     assert module.constructed == [
         "ClaudeDesktopCollector",
         "CodexCollector",
-        "DxtCollector",
         "ProjectMcpJsonCollector",
     ]
     paths, processes, cli, collectors = module.calls[0]
     assert paths.__class__.__name__ == "DiscoveryPaths"
     assert processes is False and cli is False and len(collectors) == 4
+    from redteam.chains.dxt import DxtCollector
+
+    assert isinstance(collectors[2], DxtCollector)
     assert len(servers) == 1
     assert servers[0].env_keys == ("TOKEN",)
     assert servers[0].source == "unknown"
@@ -139,7 +141,7 @@ def test_discovery_claude_code_opt_in(shadow: Path) -> None:
     discover_servers(include_claude_code=True)
     module = sys.modules["shadow_mcp"]
     assert module.constructed[-1] == "ClaudeCodeCollector"
-    assert len(module.constructed) == 5
+    assert len(module.constructed) == 4
     assert len(module.calls[0][3]) == 5
 
 
@@ -664,7 +666,7 @@ def test_dxt_override_is_applied_to_collectors_before_discovery(
 
     class DxtCollector:
         def __init__(self, selected: object) -> None:
-            assert _fixture_path(selected, "claude_extensions_dir") == override
+            pytest.fail("shadow-mcp's DxtCollector must never be instantiated")
 
     monkeypatch.setattr(dxt_module, "DxtCollector", DxtCollector)
     original_glob = Path.glob

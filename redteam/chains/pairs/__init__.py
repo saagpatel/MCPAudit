@@ -290,6 +290,20 @@ def resolve_configs(
     result: list[ConfiguredServer] = []
     for config in sorted(configs, key=lambda server: server.name):
         name = config.name
+        header_keys_state: object = getattr(config, "header_keys_state", "AVAILABLE")
+        if header_keys_state == "UNAVAILABLE":
+            provenance_source, provenance_location = (provenance or {}).get(name, (None, None))
+            result.append(
+                ConfiguredServer(
+                    name,
+                    None,
+                    reason="launch identity incomplete: header keys unavailable from discovery",
+                    env_keys=tuple(sorted(config.env_keys)),
+                    provenance_source=provenance_source,
+                    provenance_location=provenance_location,
+                )
+            )
+            continue
         args = config.args
         command = config.command
         roots: tuple[str, ...] = ()

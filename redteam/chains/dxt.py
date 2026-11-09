@@ -2,14 +2,130 @@
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import stat
+from dataclasses import dataclass
 from pathlib import Path
 
 from mcp_audit.models import ServerConfig
 from redteam.surface import ServerSurface, SurfaceTool
+
+MAX_INPUT_BYTES = 1024 * 1024
+
+
+def read_regular_file(path: Path) -> str:
+    """Read bounded UTF-8 input without following links in any path component."""
+    path = path.absolute()
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = getattr(os, "O_DIRECTORY", 0)
+    if not nofollow or not directory:
+        raise ValueError("no-follow regular-file reads are unavailable")
+    directory_flags = os.O_RDONLY | directory | nofollow
+    if ".." in path.parts:
+        raise ValueError("input path must be canonical")
+    directory_fd = os.open(path.anchor, directory_flags)
+    try:
+        for component in path.parts[1:-1]:
+            child_fd = os.open(component, directory_flags, dir_fd=directory_fd)
+            os.close(directory_fd)
+            directory_fd = child_fd
+        # Reject FIFOs and links before opening; recheck the opened descriptor
+        # below to cover replacements between stat and open. NONBLOCK bounds races.
+        info = os.stat(path.name, dir_fd=directory_fd, follow_symlinks=False)
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValueError("input is not a private regular file")
+        if info.st_size > MAX_INPUT_BYTES:
+            raise ValueError("input exceeds size cap")
+        file_fd = os.open(path.name, os.O_RDONLY | nofollow | os.O_NONBLOCK, dir_fd=directory_fd)
+        with os.fdopen(file_fd, "rb") as raw:
+            info = os.fstat(raw.fileno())
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                raise ValueError("input is not a private regular file")
+            if info.st_size > MAX_INPUT_BYTES:
+                raise ValueError("input exceeds size cap")
+            content = raw.read(MAX_INPUT_BYTES + 1)
+            if len(content) > MAX_INPUT_BYTES:
+                raise ValueError("input exceeds size cap")
+    finally:
+        os.close(directory_fd)
+    return content.decode("utf-8")
+
+
+@dataclass(frozen=True)
+class DxtSpec:
+    command: str
+    args: list[str]
+    env_keys: list[str]
+    transport: str = "stdio"
+    url: str | None = None
+
+
+@dataclass(frozen=True)
+class DxtSighting:
+    name: str
+    spec: DxtSpec
+    provenance: dict[str, str]
+
+
+class DxtCollector:
+    """Local replacement: never invoke shadow-mcp's unhardened DXT reader."""
+
+    source = "dxt"
+
+    def __init__(self, root: Path) -> None:
+        self.root = root.absolute()
+        self.errors: list[str] = []
+
+    def collect(self) -> list[DxtSighting]:
+        sightings: list[DxtSighting] = []
+        try:
+            if not os.path.lexists(self.root):
+                return []
+            if self.root.resolve(strict=True) != self.root:
+                raise ValueError("extension root is a link")
+            with os.scandir(self.root) as entries:
+                directories = sorted(entries, key=lambda entry: entry.name)
+            for entry in directories:
+                try:
+                    if entry.is_symlink():
+                        raise ValueError("extension directory is a link")
+                    if not entry.is_dir(follow_symlinks=False):
+                        continue
+                    document = _document_at(self.root, entry.name, "manifest.json")
+                    server = document.get("server")
+                    launch = server.get("mcp_config") if isinstance(server, dict) else None
+                    if not isinstance(launch, dict):
+                        raise ValueError("missing nested launch metadata")
+                    command = launch.get("command")
+                    args = launch.get("args", [])
+                    env = launch.get("env", {})
+                    name = document.get("name", entry.name)
+                    if (
+                        not isinstance(name, str)
+                        or not name
+                        or not isinstance(command, str)
+                        or not command
+                        or not isinstance(args, list)
+                        or any(not isinstance(arg, str) for arg in args)
+                        or not isinstance(env, dict)
+                        or any(not isinstance(key, str) for key in env)
+                        or launch.get("url") is not None
+                        or launch.get("transport", launch.get("type", "stdio")) != "stdio"
+                    ):
+                        raise ValueError("invalid stdio launch metadata")
+                    sightings.append(
+                        DxtSighting(
+                            name,
+                            DxtSpec(command, args, sorted(env)),
+                            {"source": "dxt", "location": str(self.root / entry.name / "manifest.json")},
+                        )
+                    )
+                except (OSError, UnicodeError, ValueError, RuntimeError) as exc:
+                    self.errors.append(f"DXT manifest skipped ({type(exc).__name__})")
+        except (OSError, ValueError, RuntimeError) as exc:
+            self.errors.append(f"DXT directory skipped ({type(exc).__name__})")
+        return sightings
 
 
 def metadata_inputs(extensions: Path, settings: Path) -> list[Path]:
@@ -18,7 +134,20 @@ def metadata_inputs(extensions: Path, settings: Path) -> list[Path]:
     Register files as well as directories so aliases outside the directories
     cannot overwrite them. Only enumerate names; do not parse their contents.
     """
-    return [*sorted(extensions.glob("*/manifest.json")), *sorted(settings.glob("*.json"))]
+    extensions = extensions.absolute()
+    manifests: list[Path] = []
+    try:
+        if extensions.resolve(strict=True) == extensions:
+            with os.scandir(extensions) as entries:
+                manifests = [
+                    extensions / entry.name / "manifest.json"
+                    for entry in entries
+                    if entry.is_dir(follow_symlinks=False)
+                ]
+    except (OSError, RuntimeError):
+        # Collection reports unavailable directories; protection only lists names.
+        pass
+    return [*sorted(manifests), *sorted(settings.glob("*.json"))]
 
 
 def extension_directory(provenance: object) -> Path | None:
@@ -54,31 +183,9 @@ def _document_at(root: Path, directory: str, filename: str) -> dict[str, object]
     """Read one regular JSON file without following links in any component."""
     if Path(directory).name != directory or Path(filename).name != filename:
         raise ValueError("DXT metadata path is not a direct child")
-    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-    nofollow = getattr(os, "O_NOFOLLOW", 0)
-    if not getattr(os, "O_DIRECTORY", 0) or not nofollow:
-        raise ValueError("DXT no-follow metadata reads are unavailable")
     if not root.is_absolute() or ".." in root.parts:
         raise ValueError("DXT metadata root must be absolute and canonical")
-    root_fd = os.open("/", directory_flags)
-    try:
-        for component in root.parts[1:]:
-            child_fd = os.open(component, directory_flags, dir_fd=root_fd)
-            os.close(root_fd)
-            root_fd = child_fd
-        directory_fd = os.open(directory, directory_flags, dir_fd=root_fd)
-        try:
-            file_fd = os.open(filename, os.O_RDONLY | nofollow | os.O_NONBLOCK, dir_fd=directory_fd)
-            with os.fdopen(file_fd, "rb") as raw:
-                info = os.fstat(raw.fileno())
-                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-                    raise ValueError("DXT metadata is not a private regular file")
-                with io.TextIOWrapper(raw, encoding="utf-8") as stream:
-                    value: object = json.load(stream)
-        finally:
-            os.close(directory_fd)
-    finally:
-        os.close(root_fd)
+    value: object = json.loads(read_regular_file(root / directory / filename))
     if not isinstance(value, dict):
         raise ValueError("DXT metadata must be an object")
     return value
