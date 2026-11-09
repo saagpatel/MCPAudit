@@ -1,4 +1,4 @@
-.PHONY: install check test lint format typecheck clean audit help base twins
+.PHONY: install check test lint format typecheck clean audit help base twins scan report rerun
 
 # Default target
 help:
@@ -14,6 +14,9 @@ help:
 	@echo "  audit      Run mcp-audit against your local MCP config"
 	@echo "  base       Verify inert mcpforge fixture (REGEN=1 to replace)"
 	@echo "  twins      Generate and verify the inert mutation range"
+	@echo "  scan       Scan generated twins with direct detectors"
+	@echo "  report     Render and compare the range results"
+	@echo "  rerun      Generate, scan and report (ACCEPT=1 updates baseline)"
 	@echo ""
 
 install:
@@ -24,6 +27,15 @@ base:
 
 twins:
 	uv run --locked python -m redteam.range.gen
+
+scan:
+	uv run --locked python -m redteam.range.harness.scan $(if $(DISABLE),--disable $(DISABLE),)
+
+report:
+	uv run --locked python -m redteam.range.report $(if $(filter 1,$(ACCEPT)),--accept,)
+
+rerun:
+	uv run --locked python -m redteam.range.rerun $(if $(filter 1,$(ACCEPT)),--accept,)
 
 check:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }
