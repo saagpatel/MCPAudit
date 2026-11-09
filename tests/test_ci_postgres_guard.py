@@ -20,6 +20,7 @@ def test_postgres_ci_uses_local_binaries_without_service_container() -> None:
     job = jobs["test"]
     assert isinstance(job, dict)
     assert "services" not in job
+    assert job.get("env", {}).get("PROOFOS_POSTGRES_BIN") == "/usr/lib/postgresql/16/bin"
 
     steps = job["steps"]
     assert isinstance(steps, list)
@@ -29,7 +30,11 @@ def test_postgres_ci_uses_local_binaries_without_service_container() -> None:
         if isinstance(step, dict) and step.get("name") == "Install PostgreSQL 16 server binaries"
     ]
     assert len(install_steps) == 1
-    assert install_steps[0]["run"] == "sudo apt-get install -y postgresql-16"
+    assert install_steps[0]["run"] == (
+        "sudo apt-get update && sudo apt-get install -y postgresql-common && "
+        "sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y && "
+        "sudo apt-get install -y postgresql-16"
+    )
 
 
 @pytest.mark.parametrize("root_tag", ["testsuites", "testsuite"])
