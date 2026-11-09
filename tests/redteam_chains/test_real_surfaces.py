@@ -291,6 +291,31 @@ def test_provenance_manifest_command_must_match_selected_server(tmp_path: Path) 
     assert server.surface is None and "unmatched" in str(server.reason)
 
 
+@pytest.mark.parametrize(
+    "launch",
+    [
+        None,
+        {"command": "different-launcher", "args": _config().args},
+        {"command": "node", "args": ["${__dirname}/different.js"]},
+    ],
+)
+def test_nested_dxt_launch_cannot_fall_back_to_matching_outer_fields(tmp_path: Path, launch: object) -> None:
+    extensions, extension = _extension(tmp_path)
+    manifest = extension / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "server": {"command": "node", "args": _config().args, "mcp_config": launch},
+                "tools": [{"name": "write_file"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    server = resolve_configs([_config()], dxt_dir=extensions, extensions={"Filesystem": extension})[0]
+    assert server.tool_surface == "UNKNOWN" and server.surface is None
+    assert server.reason is not None and "unmatched" in server.reason
+
+
 def test_provenance_manifest_and_directory_fields(tmp_path: Path) -> None:
     assert extension_directory({"path": str(tmp_path / "manifest.json")}) == tmp_path
     assert extension_directory({"path": tmp_path}) == tmp_path

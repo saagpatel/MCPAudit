@@ -220,6 +220,10 @@ def manifest_surface(
                 raise ValueError("DXT extension escaped the selected directory")
             document = _document_at(root, directory.name, manifest.name)
             launch = document.get("server")
+            if isinstance(launch, dict) and "mcp_config" in launch:
+                # DXT manifests nest their actual launch spec here. A present
+                # but invalid nested spec must not fall back to outer fields.
+                launch = launch["mcp_config"]
             if not isinstance(launch, dict) or launch.get("command") != config.command:
                 continue
             matched, expanded_roots = _launch_args_match(launch.get("args"), config, directory)

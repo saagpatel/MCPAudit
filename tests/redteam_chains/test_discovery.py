@@ -246,3 +246,79 @@ def test_discovery_dxt_location_selects_exact_manifest_and_settings(
     assert server.roots == ("synthetic/synthetic.selected",)
     assert server.provenance_source == "dxt"
     assert server.provenance_location == str(manifest)
+
+
+@pytest.mark.parametrize("as_mapping", [False, True])
+@pytest.mark.parametrize(
+    ("name", "identifier", "args", "tools", "roots"),
+    [
+        (
+            "Filesystem",
+            "ant.dir.ant.anthropic.filesystem",
+            ["${__dirname}/dist/index.js", "${user_config.allowed_directories}"],
+            ["edit_file", "write_file"],
+            ["synthetic/project"],
+        ),
+        (
+            "chrome-control",
+            "ant.dir.ant.anthropic.chrome-control",
+            ["${__dirname}/server/index.js"],
+            ["execute_javascript"],
+            [],
+        ),
+    ],
+)
+def test_discovery_dxt_nested_launch_with_unexpanded_placeholders(
+    shadow: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    as_mapping: bool,
+    name: str,
+    identifier: str,
+    args: list[str],
+    tools: list[str],
+    roots: list[str],
+) -> None:
+    discover_servers()  # Load only the synthetic shadow-mcp adapter.
+    claude = tmp_path / "Library" / "Application Support" / "Claude"
+    extensions = claude / "Claude Extensions"
+    settings = claude / "Claude Extensions Settings"
+    extension = extensions / identifier
+    extension.mkdir(parents=True)
+    settings.mkdir()
+    manifest = extension / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "server": {
+                    "type": "node",
+                    "entry_point": args[0].removeprefix("${__dirname}/"),
+                    "mcp_config": {"command": "node", "args": args},
+                },
+                "tools": [{"name": tool} for tool in tools],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (settings / f"{identifier}.json").write_text(
+        json.dumps({"userConfig": {"allowed_directories": roots}}), encoding="utf-8"
+    )
+    fields = {"source": "dxt", "location": str(manifest)}
+    entry = SimpleNamespace(
+        name=name,
+        spec=SimpleNamespace(command="node", args=args, transport="stdio", url=None, env_keys=[]),
+        provenance=fields if as_mapping else SimpleNamespace(**fields),
+    )
+
+    def discover(paths: object, *, include_processes: bool, include_cli: bool, collectors: object) -> object:
+        return SimpleNamespace(servers=[entry], source_counts={"dxt": 1}, errors=[])
+
+    monkeypatch.setattr(sys.modules["shadow_mcp.collectors.base"], "discover_all", discover)
+    # The collector's direct-child manifest location supplies the root; no home discovery is needed.
+    server = discover_servers()[0]
+    assert server.tool_surface == "KNOWN" and server.source == "dxt-manifest"
+    assert server.surface is not None and server.surface.unverified
+    assert [tool.name for tool in server.surface.tools] == tools
+    assert server.roots == tuple(roots)
+    assert server.provenance_source == "dxt"
+    assert server.provenance_location == str(manifest)
