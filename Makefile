@@ -1,4 +1,4 @@
-.PHONY: install check test lint format typecheck clean audit help base twins
+.PHONY: install check test lint format typecheck clean audit help base twins chains chains-real
 
 # Default target
 help:
@@ -14,6 +14,8 @@ help:
 	@echo "  audit      Run mcp-audit against your local MCP config"
 	@echo "  base       Verify inert mcpforge fixture (REGEN=1 to replace)"
 	@echo "  twins      Generate and verify the inert mutation range"
+	@echo "  chains     Rank synthetic two-server chains and run the sandboxed canary"
+	@echo "  chains-real  Discover configs with SHADOW_MCP=<path> (explicit opt-in)"
 	@echo ""
 
 install:
@@ -24,6 +26,13 @@ base:
 
 twins:
 	uv run --locked python -m redteam.range.gen
+
+chains:
+	uv run --locked python -m redteam.chains run --config redteam/fixtures/servers/configs/git-plus-filesystem.json --reproduce
+
+chains-real:
+	@test -n "$(SHADOW_MCP)" || { echo "set SHADOW_MCP=<path-to-shadow-mcp>" >&2; exit 2; }
+	uv run --with "$(SHADOW_MCP)" python -m redteam.chains run --discover --reproduce --json build/redteam/chains/real-report.json --md build/redteam/chains/real-report.md
 
 check:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }
