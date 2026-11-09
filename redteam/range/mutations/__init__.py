@@ -10,22 +10,12 @@ from dataclasses import dataclass
 from typing import Literal
 
 from redteam.range.harness.adapter import IntegrityInput
+from redteam.range.mutations.external_schema_ref import operator as _external_schema_ref
 from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceResource, SurfaceTool
 
-Category = Literal[
-    "hidden-instruction",
-    "invisible-unicode",
-    "shadowed-name",
-    "concealed-exfiltration",
-    "ssrf",
-    "egress",
-    "lethal-trifecta",
-    "surface-drift",
-    "capability-escalation",
-    "provenance-drift",
-    "integrity-drift",
-    "annotation-contradiction",
-]
+# Categories are an open registry: a new operator can introduce one without
+# changing a central literal union.
+Category = str
 Prediction = Literal["catch", "miss"]
 
 
@@ -883,6 +873,10 @@ _operators: list[MutationOperator] = [
         ),
     ),
 ]
+
+# Keep category additions explicit and reviewable; the implementation lives in
+# its own module so future operators can be registered with one line here.
+_operators.append(_external_schema_ref())
 
 OPERATORS: tuple[MutationOperator, ...] = tuple(_operators)
 _BY_ID = {operator.id: operator for operator in OPERATORS}

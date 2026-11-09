@@ -19,8 +19,9 @@ def generate(output: Path = OUTPUT) -> None:
         surface=ServerSurface.load(BASE / "surface.json"),
         source=(BASE / "server.py.txt").read_text(encoding="utf-8"),
     )
-    if len(OPERATORS) != 30 or len({operator.id for operator in OPERATORS}) != 30:
-        raise ValueError("expected 30 uniquely identified operators")
+    operator_ids = [operator.id for operator in OPERATORS]
+    if len(operator_ids) < 30 or len(set(operator_ids)) != len(operator_ids):
+        raise ValueError("expected at least 30 uniquely identified operators")
     twins = [(operator, operator.apply(base)) for operator in OPERATORS]
     for operator, twin in twins:
         if twin.twin_id != operator.id or twin.operator_id != operator.id:
@@ -77,7 +78,7 @@ def generate(output: Path = OUTPUT) -> None:
 
 def main() -> None:
     generate()
-    print("30 twins, each with exactly one mutation")
+    print(f"{len(OPERATORS)} twins, each with exactly one mutation")
 
 
 if __name__ == "__main__":
