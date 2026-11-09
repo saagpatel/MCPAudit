@@ -28,6 +28,7 @@ class TwinRecord(TypedDict, total=False):
     provenance: list[str]
     reason: str
     statuses: dict[str, object]
+    detector_provenance: dict[str, list[str]]
     expected_id_findings: list[str]
 
 
@@ -75,7 +76,6 @@ def _read_scan(path: Path) -> ScanData:
             raise ValueError(f"duplicate twin id: {twin_id}")
         seen.add(twin_id)
         twins.append(twin)
-    twins.sort(key=lambda item: item["id"])
     normalized: ScanData = {"twins": twins}
     control = raw.get("control")
     if control is not None:
@@ -93,7 +93,7 @@ def _matrix_rows(
     twins: Sequence[TwinRecord],
 ) -> tuple[list[str], list[str], dict[tuple[str, str], Result]]:
     categories = sorted({twin["category"] for twin in twins})
-    twin_ids = [twin["id"] for twin in sorted(twins, key=lambda item: item["id"])]
+    twin_ids = [twin["id"] for twin in twins]
     cells = {(twin["category"], twin["id"]): twin["result"] for twin in twins}
     return categories, twin_ids, cells
 
@@ -170,7 +170,8 @@ def _markdown(data: ScanData, regressions: Sequence[str], improvements: Sequence
                 for key, value in sorted(control_statuses.items())
             )
             lines.append(f"Detector states: {state_text}.")
-        lines.append(f"Provenance: {_ordered_ids(control.get('provenance'))}.")
+        provenance = control.get("detector_provenance", {})
+        lines.append(f"Package verification provenance: {_ordered_ids(provenance.get('pkgverify'))}.")
     lines.extend(["", "## Baseline diff", ""])
     lines.append(f"Regressions: {len(regressions)}; improvements: {len(improvements)}.")
     for title, changes in (("Regressions", regressions), ("Improvements", improvements)):

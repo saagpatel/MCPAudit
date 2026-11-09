@@ -1,10 +1,21 @@
 {
   "control": {
+    "detector_provenance": {
+      "drift": [],
+      "egress": [],
+      "escalation": [],
+      "injection": [],
+      "integrity": [],
+      "permissions": [],
+      "pkgverify": [],
+      "provenance": [],
+      "schema": [],
+      "shadowing": [],
+      "ssrf": [],
+      "trifecta": []
+    },
     "emitted_ids": [],
     "expected_id_findings": [],
-    "provenance": [
-      "MOCKED"
-    ],
     "result": "CLEAN",
     "statuses": {
       "drift": {
@@ -59,85 +70,35 @@
   },
   "twins": [
     {
-      "allowed_collateral": [],
-      "category": "annotation-contradiction",
-      "collateral_ids": [],
-      "detector": "permissions",
-      "emitted_ids": [
-        "MCP002",
-        "MCP005",
-        "MCP009",
-        "MCP043"
-      ],
-      "expected_ids": [
-        "MCP043"
-      ],
-      "id": "annotation-contradiction",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "permissions": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP002",
-        "MCP005",
-        "MCP009"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "invisible-unicode",
-      "collateral_ids": [],
-      "detector": "injection",
-      "emitted_ids": [
+      "allowed_collateral": [
+        "MCP006",
         "MCP008",
         "MCP009",
+        "MCP018",
         "MCP019"
       ],
-      "expected_ids": [
-        "MCP008"
-      ],
-      "id": "bidi-override",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "injection": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
+      "category": "hidden-instruction",
+      "collateral_ids": [
+        "MCP006",
+        "MCP008",
         "MCP009",
+        "MCP018",
         "MCP019"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "invisible-unicode",
-      "collateral_ids": [],
+      ],
       "detector": "injection",
       "emitted_ids": [
-        "MCP009"
+        "MCP006",
+        "MCP008",
+        "MCP009",
+        "MCP018",
+        "MCP019"
       ],
       "expected_ids": [
-        "MCP008"
+        "MCP007"
       ],
-      "id": "cgj",
-      "predicted": "miss",
-      "provenance": [
-        "MOCKED"
-      ],
+      "id": "hidden-desc",
+      "predicted": "catch",
+      "provenance": [],
       "reason": null,
       "result": "MISSED",
       "statuses": {
@@ -146,14 +107,60 @@
           "state": "completed"
         }
       },
-      "unexpected_ids": [
-        "MCP009"
-      ]
+      "unexpected_ids": []
     },
     {
-      "allowed_collateral": [],
+      "allowed_collateral": [
+        "MCP006",
+        "MCP008",
+        "MCP009",
+        "MCP018",
+        "MCP019"
+      ],
       "category": "hidden-instruction",
-      "collateral_ids": [],
+      "collateral_ids": [
+        "MCP006",
+        "MCP008",
+        "MCP009",
+        "MCP018",
+        "MCP019"
+      ],
+      "detector": "injection",
+      "emitted_ids": [
+        "MCP006",
+        "MCP008",
+        "MCP009",
+        "MCP018",
+        "MCP019"
+      ],
+      "expected_ids": [
+        "MCP007"
+      ],
+      "id": "hidden-param",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "MISSED",
+      "statuses": {
+        "injection": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP001",
+        "MCP009",
+        "MCP019"
+      ],
+      "category": "hidden-instruction",
+      "collateral_ids": [
+        "MCP001",
+        "MCP009",
+        "MCP019"
+      ],
       "detector": "injection",
       "emitted_ids": [
         "MCP001",
@@ -167,9 +174,7 @@
       ],
       "id": "credential-hunt",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
@@ -178,11 +183,592 @@
           "state": "completed"
         }
       },
-      "unexpected_ids": [
-        "MCP001",
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
         "MCP009",
         "MCP019"
-      ]
+      ],
+      "category": "invisible-unicode",
+      "collateral_ids": [
+        "MCP009",
+        "MCP019"
+      ],
+      "detector": "injection",
+      "emitted_ids": [
+        "MCP008",
+        "MCP009",
+        "MCP019"
+      ],
+      "expected_ids": [
+        "MCP008"
+      ],
+      "id": "zwsp",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "injection": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP009",
+        "MCP019"
+      ],
+      "category": "invisible-unicode",
+      "collateral_ids": [
+        "MCP009",
+        "MCP019"
+      ],
+      "detector": "injection",
+      "emitted_ids": [
+        "MCP008",
+        "MCP009",
+        "MCP019"
+      ],
+      "expected_ids": [
+        "MCP008"
+      ],
+      "id": "tag-chars",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "injection": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP009",
+        "MCP019"
+      ],
+      "category": "invisible-unicode",
+      "collateral_ids": [
+        "MCP009",
+        "MCP019"
+      ],
+      "detector": "injection",
+      "emitted_ids": [
+        "MCP008",
+        "MCP009",
+        "MCP019"
+      ],
+      "expected_ids": [
+        "MCP008"
+      ],
+      "id": "variation-selector",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "injection": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP009"
+      ],
+      "category": "invisible-unicode",
+      "collateral_ids": [
+        "MCP009"
+      ],
+      "detector": "injection",
+      "emitted_ids": [
+        "MCP009"
+      ],
+      "expected_ids": [
+        "MCP008"
+      ],
+      "id": "cgj",
+      "predicted": "miss",
+      "provenance": [],
+      "reason": null,
+      "result": "MISSED",
+      "statuses": {
+        "injection": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP009",
+        "MCP019"
+      ],
+      "category": "invisible-unicode",
+      "collateral_ids": [
+        "MCP009",
+        "MCP019"
+      ],
+      "detector": "injection",
+      "emitted_ids": [
+        "MCP008",
+        "MCP009",
+        "MCP019"
+      ],
+      "expected_ids": [
+        "MCP008"
+      ],
+      "id": "bidi-override",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "injection": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP002",
+        "MCP009",
+        "MCP018",
+        "MCP019"
+      ],
+      "category": "invisible-unicode",
+      "collateral_ids": [
+        "MCP002",
+        "MCP009",
+        "MCP018",
+        "MCP019"
+      ],
+      "detector": "injection",
+      "emitted_ids": [
+        "MCP002",
+        "MCP008",
+        "MCP009",
+        "MCP018",
+        "MCP019"
+      ],
+      "expected_ids": [
+        "MCP008"
+      ],
+      "id": "mapped-homoglyph-desc",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "injection": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP009"
+      ],
+      "category": "shadowed-name",
+      "collateral_ids": [
+        "MCP009"
+      ],
+      "detector": "shadowing",
+      "emitted_ids": [
+        "MCP009",
+        "MCP015"
+      ],
+      "expected_ids": [
+        "MCP015"
+      ],
+      "id": "shadow-exact",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "shadowing": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP001",
+        "MCP009"
+      ],
+      "category": "shadowed-name",
+      "collateral_ids": [
+        "MCP001",
+        "MCP009"
+      ],
+      "detector": "shadowing",
+      "emitted_ids": [
+        "MCP001",
+        "MCP009",
+        "MCP016"
+      ],
+      "expected_ids": [
+        "MCP016"
+      ],
+      "id": "shadow-separator",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "shadowing": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP008",
+        "MCP009"
+      ],
+      "category": "shadowed-name",
+      "collateral_ids": [
+        "MCP008",
+        "MCP009"
+      ],
+      "detector": "shadowing",
+      "emitted_ids": [
+        "MCP008",
+        "MCP009",
+        "MCP017"
+      ],
+      "expected_ids": [
+        "MCP017"
+      ],
+      "id": "shadow-mapped-homoglyph",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "shadowing": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP009"
+      ],
+      "category": "shadowed-name",
+      "collateral_ids": [
+        "MCP009"
+      ],
+      "detector": "shadowing",
+      "emitted_ids": [
+        "MCP009"
+      ],
+      "expected_ids": [
+        "MCP017"
+      ],
+      "id": "shadow-unmapped-homoglyph",
+      "predicted": "miss",
+      "provenance": [],
+      "reason": null,
+      "result": "MISSED",
+      "statuses": {
+        "shadowing": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP003",
+        "MCP009",
+        "MCP018"
+      ],
+      "category": "concealed-exfiltration",
+      "collateral_ids": [
+        "MCP003",
+        "MCP009",
+        "MCP018"
+      ],
+      "detector": "permissions",
+      "emitted_ids": [
+        "MCP003",
+        "MCP006",
+        "MCP009",
+        "MCP018"
+      ],
+      "expected_ids": [
+        "MCP006"
+      ],
+      "id": "exfil-metadata",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "permissions": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [],
+      "category": "concealed-exfiltration",
+      "collateral_ids": [],
+      "detector": "permissions",
+      "emitted_ids": [],
+      "expected_ids": [
+        "MCP006",
+        "MCP024"
+      ],
+      "id": "exfil-handler-only",
+      "predicted": "miss",
+      "provenance": [],
+      "reason": null,
+      "result": "MISSED",
+      "statuses": {
+        "permissions": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP003",
+        "MCP009",
+        "MCP041"
+      ],
+      "category": "ssrf",
+      "collateral_ids": [
+        "MCP003",
+        "MCP009",
+        "MCP041"
+      ],
+      "detector": "ssrf",
+      "emitted_ids": [
+        "MCP003",
+        "MCP009",
+        "MCP011",
+        "MCP041"
+      ],
+      "expected_ids": [
+        "MCP011"
+      ],
+      "id": "ssrf-url-param",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "ssrf": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP003"
+      ],
+      "category": "egress",
+      "collateral_ids": [
+        "MCP003"
+      ],
+      "detector": "egress",
+      "emitted_ids": [
+        "MCP003",
+        "MCP040"
+      ],
+      "expected_ids": [
+        "MCP040"
+      ],
+      "id": "egress-fixed-host",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "egress": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP009"
+      ],
+      "category": "egress",
+      "collateral_ids": [
+        "MCP009"
+      ],
+      "detector": "egress",
+      "emitted_ids": [
+        "MCP009"
+      ],
+      "expected_ids": [
+        "MCP040"
+      ],
+      "id": "egress-desc-url-only",
+      "predicted": "miss",
+      "provenance": [],
+      "reason": null,
+      "result": "MISSED",
+      "statuses": {
+        "egress": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP003",
+        "MCP006",
+        "MCP009",
+        "MCP012"
+      ],
+      "category": "egress",
+      "collateral_ids": [
+        "MCP003",
+        "MCP006",
+        "MCP009",
+        "MCP012"
+      ],
+      "detector": "egress",
+      "emitted_ids": [
+        "MCP003",
+        "MCP006",
+        "MCP009",
+        "MCP012",
+        "MCP041"
+      ],
+      "expected_ids": [
+        "MCP041"
+      ],
+      "id": "egress-caller-steered-credential",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "egress": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP001",
+        "MCP003",
+        "MCP006",
+        "MCP009",
+        "MCP011",
+        "MCP041"
+      ],
+      "category": "lethal-trifecta",
+      "collateral_ids": [
+        "MCP001",
+        "MCP003",
+        "MCP006",
+        "MCP009",
+        "MCP011",
+        "MCP041"
+      ],
+      "detector": "trifecta",
+      "emitted_ids": [
+        "MCP001",
+        "MCP003",
+        "MCP006",
+        "MCP009",
+        "MCP011",
+        "MCP013",
+        "MCP041"
+      ],
+      "expected_ids": [
+        "MCP013"
+      ],
+      "id": "trifecta-single",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "trifecta": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [
+        "MCP001",
+        "MCP003",
+        "MCP009",
+        "MCP018"
+      ],
+      "category": "lethal-trifecta",
+      "collateral_ids": [
+        "MCP001",
+        "MCP003",
+        "MCP009",
+        "MCP018"
+      ],
+      "detector": "trifecta",
+      "emitted_ids": [
+        "MCP001",
+        "MCP003",
+        "MCP009",
+        "MCP014",
+        "MCP018"
+      ],
+      "expected_ids": [
+        "MCP014"
+      ],
+      "id": "trifecta-fleet",
+      "predicted": "catch",
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "trifecta": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
     },
     {
       "allowed_collateral": [],
@@ -197,9 +783,7 @@
       ],
       "id": "drift-new-tool",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
@@ -223,9 +807,7 @@
       ],
       "id": "drift-schema-change",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
@@ -237,101 +819,19 @@
       "unexpected_ids": []
     },
     {
-      "allowed_collateral": [],
-      "category": "egress",
-      "collateral_ids": [],
-      "detector": "egress",
-      "emitted_ids": [
-        "MCP003",
-        "MCP006",
-        "MCP009",
-        "MCP012",
-        "MCP041"
-      ],
-      "expected_ids": [
-        "MCP041"
-      ],
-      "id": "egress-caller-steered-credential",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "egress": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP003",
-        "MCP006",
-        "MCP009",
-        "MCP012"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "egress",
-      "collateral_ids": [],
-      "detector": "egress",
-      "emitted_ids": [
+      "allowed_collateral": [
+        "MCP002",
+        "MCP004",
+        "MCP005",
         "MCP009"
       ],
-      "expected_ids": [
-        "MCP040"
-      ],
-      "id": "egress-desc-url-only",
-      "predicted": "miss",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "MISSED",
-      "statuses": {
-        "egress": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP009"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "egress",
-      "collateral_ids": [],
-      "detector": "egress",
-      "emitted_ids": [
-        "MCP003",
-        "MCP040"
-      ],
-      "expected_ids": [
-        "MCP040"
-      ],
-      "id": "egress-fixed-host",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "egress": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP003"
-      ]
-    },
-    {
-      "allowed_collateral": [],
       "category": "capability-escalation",
-      "collateral_ids": [],
+      "collateral_ids": [
+        "MCP002",
+        "MCP004",
+        "MCP005",
+        "MCP009"
+      ],
       "detector": "escalation",
       "emitted_ids": [
         "MCP002",
@@ -345,9 +845,7 @@
       ],
       "id": "escalation-capability",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
@@ -356,109 +854,23 @@
           "state": "completed"
         }
       },
-      "unexpected_ids": [
-        "MCP002",
-        "MCP004",
-        "MCP005",
-        "MCP009"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "concealed-exfiltration",
-      "collateral_ids": [],
-      "detector": "permissions",
-      "emitted_ids": [],
-      "expected_ids": [
-        "MCP006",
-        "MCP024"
-      ],
-      "id": "exfil-handler-only",
-      "predicted": "miss",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "MISSED",
-      "statuses": {
-        "permissions": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
       "unexpected_ids": []
     },
     {
-      "allowed_collateral": [],
-      "category": "concealed-exfiltration",
-      "collateral_ids": [],
-      "detector": "permissions",
-      "emitted_ids": [
-        "MCP003",
+      "allowed_collateral": [
         "MCP006",
+        "MCP008",
         "MCP009",
         "MCP018"
       ],
-      "expected_ids": [
-        "MCP006"
-      ],
-      "id": "exfil-metadata",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "permissions": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP003",
+      "category": "capability-escalation",
+      "collateral_ids": [
+        "MCP006",
+        "MCP008",
         "MCP009",
         "MCP018"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "external-schema-ref",
-      "collateral_ids": [],
-      "detector": "schema",
-      "emitted_ids": [
-        "MCP009",
-        "MCP012",
-        "MCP041",
-        "MCP053"
       ],
-      "expected_ids": [
-        "MCP053"
-      ],
-      "id": "external-schema-ref",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "schema": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP009",
-        "MCP012",
-        "MCP041"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "hidden-instruction",
-      "collateral_ids": [],
-      "detector": "injection",
+      "detector": "escalation",
       "emitted_ids": [
         "MCP006",
         "MCP008",
@@ -467,146 +879,15 @@
         "MCP019"
       ],
       "expected_ids": [
-        "MCP007"
-      ],
-      "id": "hidden-desc",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "MISSED",
-      "statuses": {
-        "injection": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP006",
-        "MCP008",
-        "MCP009",
-        "MCP018",
-        "MCP019"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "hidden-instruction",
-      "collateral_ids": [],
-      "detector": "injection",
-      "emitted_ids": [
-        "MCP006",
-        "MCP008",
-        "MCP009",
-        "MCP018",
         "MCP019"
       ],
-      "expected_ids": [
-        "MCP007"
-      ],
-      "id": "hidden-param",
+      "id": "rugpull-description",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "MISSED",
-      "statuses": {
-        "injection": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP006",
-        "MCP008",
-        "MCP009",
-        "MCP018",
-        "MCP019"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "integrity-drift",
-      "collateral_ids": [],
-      "detector": "integrity",
-      "emitted_ids": [
-        "MCP024"
-      ],
-      "expected_ids": [
-        "MCP024"
-      ],
-      "id": "integrity-drift",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
-        "integrity": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": []
-    },
-    {
-      "allowed_collateral": [],
-      "category": "invisible-unicode",
-      "collateral_ids": [],
-      "detector": "injection",
-      "emitted_ids": [
-        "MCP002",
-        "MCP008",
-        "MCP009",
-        "MCP018",
-        "MCP019"
-      ],
-      "expected_ids": [
-        "MCP008"
-      ],
-      "id": "mapped-homoglyph-desc",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "injection": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP002",
-        "MCP009",
-        "MCP018",
-        "MCP019"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "provenance-drift",
-      "collateral_ids": [],
-      "detector": "provenance",
-      "emitted_ids": [
-        "MCP021"
-      ],
-      "expected_ids": [
-        "MCP021"
-      ],
-      "id": "provenance-args",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "provenance": {
+        "escalation": {
           "reason": null,
           "state": "completed"
         }
@@ -626,9 +907,31 @@
       ],
       "id": "provenance-command",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
+      "provenance": [],
+      "reason": null,
+      "result": "CAUGHT",
+      "statuses": {
+        "provenance": {
+          "reason": null,
+          "state": "completed"
+        }
+      },
+      "unexpected_ids": []
+    },
+    {
+      "allowed_collateral": [],
+      "category": "provenance-drift",
+      "collateral_ids": [],
+      "detector": "provenance",
+      "emitted_ids": [
+        "MCP021"
       ],
+      "expected_ids": [
+        "MCP021"
+      ],
+      "id": "provenance-args",
+      "predicted": "catch",
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
@@ -652,9 +955,7 @@
       ],
       "id": "provenance-credential-key",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
@@ -667,357 +968,97 @@
     },
     {
       "allowed_collateral": [],
-      "category": "capability-escalation",
+      "category": "integrity-drift",
       "collateral_ids": [],
-      "detector": "escalation",
+      "detector": "integrity",
       "emitted_ids": [
-        "MCP006",
-        "MCP008",
-        "MCP009",
-        "MCP018",
-        "MCP019"
+        "MCP024"
       ],
       "expected_ids": [
-        "MCP019"
+        "MCP024"
       ],
-      "id": "rugpull-description",
+      "id": "integrity-drift",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
-        "escalation": {
+        "integrity": {
           "reason": null,
           "state": "completed"
         }
       },
-      "unexpected_ids": [
-        "MCP006",
-        "MCP008",
-        "MCP009",
-        "MCP018"
-      ]
+      "unexpected_ids": []
     },
     {
-      "allowed_collateral": [],
-      "category": "shadowed-name",
-      "collateral_ids": [],
-      "detector": "shadowing",
+      "allowed_collateral": [
+        "MCP002",
+        "MCP005",
+        "MCP009"
+      ],
+      "category": "annotation-contradiction",
+      "collateral_ids": [
+        "MCP002",
+        "MCP005",
+        "MCP009"
+      ],
+      "detector": "permissions",
       "emitted_ids": [
+        "MCP002",
+        "MCP005",
         "MCP009",
-        "MCP015"
+        "MCP043"
       ],
       "expected_ids": [
-        "MCP015"
+        "MCP043"
       ],
-      "id": "shadow-exact",
+      "id": "annotation-contradiction",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
-        "shadowing": {
+        "permissions": {
           "reason": null,
           "state": "completed"
         }
       },
-      "unexpected_ids": [
-        "MCP009"
-      ]
+      "unexpected_ids": []
     },
     {
-      "allowed_collateral": [],
-      "category": "shadowed-name",
-      "collateral_ids": [],
-      "detector": "shadowing",
-      "emitted_ids": [
-        "MCP008",
+      "allowed_collateral": [
         "MCP009",
-        "MCP017"
-      ],
-      "expected_ids": [
-        "MCP017"
-      ],
-      "id": "shadow-mapped-homoglyph",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "shadowing": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP008",
-        "MCP009"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "shadowed-name",
-      "collateral_ids": [],
-      "detector": "shadowing",
-      "emitted_ids": [
-        "MCP001",
-        "MCP009",
-        "MCP016"
-      ],
-      "expected_ids": [
-        "MCP016"
-      ],
-      "id": "shadow-separator",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "shadowing": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP001",
-        "MCP009"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "shadowed-name",
-      "collateral_ids": [],
-      "detector": "shadowing",
-      "emitted_ids": [
-        "MCP009"
-      ],
-      "expected_ids": [
-        "MCP017"
-      ],
-      "id": "shadow-unmapped-homoglyph",
-      "predicted": "miss",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "MISSED",
-      "statuses": {
-        "shadowing": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP009"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "ssrf",
-      "collateral_ids": [],
-      "detector": "ssrf",
-      "emitted_ids": [
-        "MCP003",
-        "MCP009",
-        "MCP011",
+        "MCP012",
         "MCP041"
       ],
-      "expected_ids": [
-        "MCP011"
-      ],
-      "id": "ssrf-url-param",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "ssrf": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP003",
+      "category": "external-schema-ref",
+      "collateral_ids": [
         "MCP009",
-        "MCP041"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "invisible-unicode",
-      "collateral_ids": [],
-      "detector": "injection",
-      "emitted_ids": [
-        "MCP008",
-        "MCP009",
-        "MCP019"
-      ],
-      "expected_ids": [
-        "MCP008"
-      ],
-      "id": "tag-chars",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "injection": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP009",
-        "MCP019"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "lethal-trifecta",
-      "collateral_ids": [],
-      "detector": "trifecta",
-      "emitted_ids": [
-        "MCP001",
-        "MCP003",
-        "MCP009",
-        "MCP014",
-        "MCP018"
-      ],
-      "expected_ids": [
-        "MCP014"
-      ],
-      "id": "trifecta-fleet",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "trifecta": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP001",
-        "MCP003",
-        "MCP009",
-        "MCP018"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "lethal-trifecta",
-      "collateral_ids": [],
-      "detector": "trifecta",
-      "emitted_ids": [
-        "MCP001",
-        "MCP003",
-        "MCP006",
-        "MCP009",
-        "MCP011",
-        "MCP013",
+        "MCP012",
         "MCP041"
       ],
-      "expected_ids": [
-        "MCP013"
-      ],
-      "id": "trifecta-single",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "trifecta": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP001",
-        "MCP003",
-        "MCP006",
-        "MCP009",
-        "MCP011",
-        "MCP041"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "invisible-unicode",
-      "collateral_ids": [],
-      "detector": "injection",
+      "detector": "schema",
       "emitted_ids": [
-        "MCP008",
         "MCP009",
-        "MCP019"
+        "MCP012",
+        "MCP041",
+        "MCP053"
       ],
       "expected_ids": [
-        "MCP008"
+        "MCP053"
       ],
-      "id": "variation-selector",
+      "id": "external-schema-ref",
       "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
+      "provenance": [],
       "reason": null,
       "result": "CAUGHT",
       "statuses": {
-        "injection": {
+        "schema": {
           "reason": null,
           "state": "completed"
         }
       },
-      "unexpected_ids": [
-        "MCP009",
-        "MCP019"
-      ]
-    },
-    {
-      "allowed_collateral": [],
-      "category": "invisible-unicode",
-      "collateral_ids": [],
-      "detector": "injection",
-      "emitted_ids": [
-        "MCP008",
-        "MCP009",
-        "MCP019"
-      ],
-      "expected_ids": [
-        "MCP008"
-      ],
-      "id": "zwsp",
-      "predicted": "catch",
-      "provenance": [
-        "MOCKED"
-      ],
-      "reason": null,
-      "result": "CAUGHT",
-      "statuses": {
-        "injection": {
-          "reason": null,
-          "state": "completed"
-        }
-      },
-      "unexpected_ids": [
-        "MCP009",
-        "MCP019"
-      ]
+      "unexpected_ids": []
     }
   ]
 }

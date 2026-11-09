@@ -102,7 +102,7 @@ def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[
                 "emitted_ids": emitted,
                 "collateral_ids": sorted(set(emitted) & allowed - expected),
                 "unexpected_ids": sorted(set(emitted) - expected - allowed),
-                "provenance": sorted(result.provenance),
+                "provenance": sorted(result.provenance.get(twin.detector, set())),
             }
         )
     control = run_detectors(
@@ -123,7 +123,7 @@ def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[
             "result": control_result,
             "emitted_ids": control_ids,
             "expected_id_findings": negative,
-            "provenance": sorted(control.provenance),
+            "detector_provenance": {key: sorted(control.provenance.get(key, set())) for key in DETECTOR_KEYS},
             "statuses": {
                 key: {"state": value.state, "reason": value.reason} for key, value in control.statuses.items()
             },
