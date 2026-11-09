@@ -118,7 +118,8 @@ def _run_script(
     if _is_nested_apply_failure(process.returncode, stderr):
         raise _Unavailable("nested sandbox unavailable")
     if missing_script and not (
-        process.returncode == 2
+        # bash (the usual macOS /bin/sh variant) exits 127 for a missing script; dash exits 2.
+        process.returncode in (2, 127)
         and os.fsencode(script.name if canary is not None else script) in stderr
         and b"No such file or directory" in stderr
     ):
