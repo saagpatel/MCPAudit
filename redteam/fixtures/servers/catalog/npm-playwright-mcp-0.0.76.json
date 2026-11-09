@@ -1,0 +1,358 @@
+{
+  "config": {
+    "args": [
+      "@playwright/mcp@0.0.76"
+    ],
+    "command": "npx",
+    "env_keys": [],
+    "transport": "stdio",
+    "url": null
+  },
+  "provenance": "Unverified; tool names and one-line descriptions transcribed from package/README.md in npm:@playwright/mcp@0.0.76 tarball, fetched 2026-11-08 from https://registry.npmjs.org/@playwright%2fmcp/0.0.76.",
+  "resources": [],
+  "server_name": "@playwright/mcp",
+  "source": "catalog",
+  "tools": [
+    {
+      "description": "Open the Playwright Dashboard in annotation mode for the current page and wait for the user to draw annotations. Returns the annotated screenshot, ARIA snapshot, and the list of annotations.",
+      "input_schema": {},
+      "name": "browser_annotate"
+    },
+    {
+      "description": "Perform click on a web page",
+      "input_schema": {},
+      "name": "browser_click"
+    },
+    {
+      "description": "Close the page",
+      "input_schema": {},
+      "name": "browser_close"
+    },
+    {
+      "description": "Returns all console messages",
+      "input_schema": {},
+      "name": "browser_console_messages"
+    },
+    {
+      "description": "Clear all cookies",
+      "input_schema": {},
+      "name": "browser_cookie_clear"
+    },
+    {
+      "description": "Delete a specific cookie",
+      "input_schema": {},
+      "name": "browser_cookie_delete"
+    },
+    {
+      "description": "Get a specific cookie by name",
+      "input_schema": {},
+      "name": "browser_cookie_get"
+    },
+    {
+      "description": "List all cookies (optionally filtered by domain/path)",
+      "input_schema": {},
+      "name": "browser_cookie_list"
+    },
+    {
+      "description": "Set a cookie with optional flags (domain, path, expires, httpOnly, secure, sameSite)",
+      "input_schema": {},
+      "name": "browser_cookie_set"
+    },
+    {
+      "description": "Perform drag and drop between two elements",
+      "input_schema": {},
+      "name": "browser_drag"
+    },
+    {
+      "description": "Drop files or MIME-typed data onto an element, as if dragged from outside the page. At least one of \"paths\" or \"data\" must be provided.",
+      "input_schema": {},
+      "name": "browser_drop"
+    },
+    {
+      "description": "Evaluate JavaScript expression on page or element",
+      "input_schema": {},
+      "name": "browser_evaluate"
+    },
+    {
+      "description": "Upload one or multiple files",
+      "input_schema": {},
+      "name": "browser_file_upload"
+    },
+    {
+      "description": "Fill multiple form fields",
+      "input_schema": {},
+      "name": "browser_fill_form"
+    },
+    {
+      "description": "Generate locator for the given element to use in tests",
+      "input_schema": {},
+      "name": "browser_generate_locator"
+    },
+    {
+      "description": "Get the final resolved config after merging CLI options, environment variables and config file.",
+      "input_schema": {},
+      "name": "browser_get_config"
+    },
+    {
+      "description": "Handle a dialog",
+      "input_schema": {},
+      "name": "browser_handle_dialog"
+    },
+    {
+      "description": "Remove a highlight overlay previously added for the element.",
+      "input_schema": {},
+      "name": "browser_hide_highlight"
+    },
+    {
+      "description": "Show a persistent highlight overlay around the element on the page.",
+      "input_schema": {},
+      "name": "browser_highlight"
+    },
+    {
+      "description": "Hover over element on page",
+      "input_schema": {},
+      "name": "browser_hover"
+    },
+    {
+      "description": "Clear all localStorage",
+      "input_schema": {},
+      "name": "browser_localstorage_clear"
+    },
+    {
+      "description": "Delete a localStorage item",
+      "input_schema": {},
+      "name": "browser_localstorage_delete"
+    },
+    {
+      "description": "Get a localStorage item by key",
+      "input_schema": {},
+      "name": "browser_localstorage_get"
+    },
+    {
+      "description": "List all localStorage key-value pairs",
+      "input_schema": {},
+      "name": "browser_localstorage_list"
+    },
+    {
+      "description": "Set a localStorage item",
+      "input_schema": {},
+      "name": "browser_localstorage_set"
+    },
+    {
+      "description": "Click mouse button at a given position",
+      "input_schema": {},
+      "name": "browser_mouse_click_xy"
+    },
+    {
+      "description": "Press mouse down",
+      "input_schema": {},
+      "name": "browser_mouse_down"
+    },
+    {
+      "description": "Drag left mouse button to a given position",
+      "input_schema": {},
+      "name": "browser_mouse_drag_xy"
+    },
+    {
+      "description": "Move mouse to a given position",
+      "input_schema": {},
+      "name": "browser_mouse_move_xy"
+    },
+    {
+      "description": "Press mouse up",
+      "input_schema": {},
+      "name": "browser_mouse_up"
+    },
+    {
+      "description": "Scroll mouse wheel",
+      "input_schema": {},
+      "name": "browser_mouse_wheel"
+    },
+    {
+      "description": "Navigate to a URL",
+      "input_schema": {},
+      "name": "browser_navigate"
+    },
+    {
+      "description": "Go back to the previous page in the history",
+      "input_schema": {},
+      "name": "browser_navigate_back"
+    },
+    {
+      "description": "Returns full details (headers and body) of a single network request, or a single part if `part` is set. Use the number from browser_network_requests.",
+      "input_schema": {},
+      "name": "browser_network_request"
+    },
+    {
+      "description": "Returns a numbered list of network requests since loading the page. Use browser_network_request with the number to get full details.",
+      "input_schema": {},
+      "name": "browser_network_requests"
+    },
+    {
+      "description": "Sets the browser network state to online or offline. When offline, all network requests will fail.",
+      "input_schema": {},
+      "name": "browser_network_state_set"
+    },
+    {
+      "description": "Save page as PDF",
+      "input_schema": {},
+      "name": "browser_pdf_save"
+    },
+    {
+      "description": "Press a key on the keyboard",
+      "input_schema": {},
+      "name": "browser_press_key"
+    },
+    {
+      "description": "Resize the browser window",
+      "input_schema": {},
+      "name": "browser_resize"
+    },
+    {
+      "description": "Resume paused script execution after it was paused. When called with step set to true, execution will pause again before the next action.",
+      "input_schema": {},
+      "name": "browser_resume"
+    },
+    {
+      "description": "Set up a route to mock network requests matching a URL pattern",
+      "input_schema": {},
+      "name": "browser_route"
+    },
+    {
+      "description": "List all active network routes",
+      "input_schema": {},
+      "name": "browser_route_list"
+    },
+    {
+      "description": "Run a Playwright code snippet. Unsafe: executes arbitrary JavaScript in the Playwright server process and is RCE-equivalent.",
+      "input_schema": {},
+      "name": "browser_run_code_unsafe"
+    },
+    {
+      "description": "Select an option in a dropdown",
+      "input_schema": {},
+      "name": "browser_select_option"
+    },
+    {
+      "description": "Clear all sessionStorage",
+      "input_schema": {},
+      "name": "browser_sessionstorage_clear"
+    },
+    {
+      "description": "Delete sessionStorage item",
+      "input_schema": {},
+      "name": "browser_sessionstorage_delete"
+    },
+    {
+      "description": "Get sessionStorage item by key",
+      "input_schema": {},
+      "name": "browser_sessionstorage_get"
+    },
+    {
+      "description": "List all sessionStorage key-value pairs",
+      "input_schema": {},
+      "name": "browser_sessionstorage_list"
+    },
+    {
+      "description": "Set sessionStorage item",
+      "input_schema": {},
+      "name": "browser_sessionstorage_set"
+    },
+    {
+      "description": "Restore storage state (cookies, local storage) from a file. This clears existing cookies and local storage before restoring.",
+      "input_schema": {},
+      "name": "browser_set_storage_state"
+    },
+    {
+      "description": "Capture accessibility snapshot of the current page, this is better than screenshot",
+      "input_schema": {},
+      "name": "browser_snapshot"
+    },
+    {
+      "description": "Start trace recording",
+      "input_schema": {},
+      "name": "browser_start_tracing"
+    },
+    {
+      "description": "Start video recording",
+      "input_schema": {},
+      "name": "browser_start_video"
+    },
+    {
+      "description": "Stop trace recording",
+      "input_schema": {},
+      "name": "browser_stop_tracing"
+    },
+    {
+      "description": "Stop video recording",
+      "input_schema": {},
+      "name": "browser_stop_video"
+    },
+    {
+      "description": "Save storage state (cookies, local storage) to a file for later reuse",
+      "input_schema": {},
+      "name": "browser_storage_state"
+    },
+    {
+      "description": "List, create, close, or select a browser tab.",
+      "input_schema": {},
+      "name": "browser_tabs"
+    },
+    {
+      "description": "Take a screenshot of the current page. You can't perform actions based on the screenshot, use browser_snapshot for actions.",
+      "input_schema": {},
+      "name": "browser_take_screenshot"
+    },
+    {
+      "description": "Type text into editable element",
+      "input_schema": {},
+      "name": "browser_type"
+    },
+    {
+      "description": "Remove network routes matching a pattern (or all routes)",
+      "input_schema": {},
+      "name": "browser_unroute"
+    },
+    {
+      "description": "Verify element is visible on the page",
+      "input_schema": {},
+      "name": "browser_verify_element_visible"
+    },
+    {
+      "description": "Verify list is visible on the page",
+      "input_schema": {},
+      "name": "browser_verify_list_visible"
+    },
+    {
+      "description": "Verify text is visible on the page. Prefer browser_verify_element_visible if possible.",
+      "input_schema": {},
+      "name": "browser_verify_text_visible"
+    },
+    {
+      "description": "Verify element value",
+      "input_schema": {},
+      "name": "browser_verify_value"
+    },
+    {
+      "description": "Add a chapter marker to the video recording. Shows a full-screen chapter card with blurred backdrop.",
+      "input_schema": {},
+      "name": "browser_video_chapter"
+    },
+    {
+      "description": "Stop annotating actions performed on the page.",
+      "input_schema": {},
+      "name": "browser_video_hide_actions"
+    },
+    {
+      "description": "Annotate subsequent actions performed on the page with a callout that names the action and highlights the target element. Useful while video recording or screencasting.",
+      "input_schema": {},
+      "name": "browser_video_show_actions"
+    },
+    {
+      "description": "Wait for text to appear or disappear or a specified time to pass",
+      "input_schema": {},
+      "name": "browser_wait_for"
+    }
+  ],
+  "unverified": true
+}
