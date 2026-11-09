@@ -1,4 +1,10 @@
-"""Deterministic Markdown and offline HTML reports for Mutation Range scans."""
+"""Deterministic Markdown and offline HTML reports for Mutation Range scans.
+
+Success requires complete inventory evidence, no unaccepted regressions and a
+CLEAN control. Acceptance can approve twin changes, but cannot waive a failed
+control or an invalid inventory. The generated report documents the sole
+package-verification not-applicable exception.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +16,8 @@ from collections import Counter
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal, TypedDict, cast
+
+from redteam.range.harness.adapter import DETECTOR_KEYS
 
 Result = Literal["CAUGHT", "MISSED", "NOT_RUN"]
 
@@ -28,20 +36,28 @@ class TwinRecord(TypedDict, total=False):
     provenance: list[str]
     reason: str
     statuses: dict[str, object]
-    detector_provenance: dict[str, list[str]]
     expected_id_findings: list[str]
+
+
+class ControlRecord(TypedDict, total=False):
+    result: Literal["CLEAN", "FINDINGS", "INCOMPLETE"]
+    emitted_ids: list[str]
+    expected_id_findings: list[str]
+    medium_plus_findings: list[str]
+    statuses: dict[str, object]
+    detector_provenance: dict[str, list[str]]
     not_applicable: list[str]
 
 
 class ScanData(TypedDict, total=False):
     twins: list[TwinRecord]
-    control: TwinRecord
+    control: ControlRecord
 
 
 def _read_scan(path: Path) -> ScanData:
     raw = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(raw, dict) or not isinstance(raw.get("twins"), list):
-        raise ValueError("results must be a JSON object with a twins list")
+    if not isinstance(raw, dict) or not isinstance(raw.get("twins"), list) or not raw["twins"]:
+        raise ValueError("results must be a JSON object with a non-empty twins list")
     twins: list[TwinRecord] = []
     seen: set[str] = set()
     for index, value in enumerate(raw["twins"]):
@@ -49,8 +65,10 @@ def _read_scan(path: Path) -> ScanData:
             raise ValueError(f"twins[{index}] must be an object")
         twin = cast(TwinRecord, value)
         for field in ("id", "category", "detector", "predicted"):
-            if not isinstance(twin.get(field), str):
-                raise ValueError(f"twins[{index}].{field} must be a string")
+            if not isinstance(twin.get(field), str) or not twin.get(field):
+                raise ValueError(f"twins[{index}].{field} must be a non-empty string")
+        if twin["detector"] not in DETECTOR_KEYS:
+            raise ValueError(f"twins[{index}].detector has an unknown value")
         for field in ("expected_ids", "emitted_ids", "expected_id_findings"):
             field_value = twin.get(field)
             if field_value is not None and (
@@ -62,16 +80,15 @@ def _read_scan(path: Path) -> ScanData:
         result = twin.get("result")
         if result is not None and result not in {"CAUGHT", "MISSED", "NOT_RUN"}:
             raise ValueError(f"twins[{index}].result has an unknown value")
-        if result is None:
-            status_map = twin.get("statuses")
-            status_value = status_map.get(twin["detector"]) if isinstance(status_map, dict) else None
-            state = status_value.get("state") if isinstance(status_value, dict) else status_value
-            if state == "completed":
-                emitted_expected = set(twin.get("expected_id_findings", []))
-                emitted_expected.update(set(twin.get("expected_ids", [])) & set(twin["emitted_ids"]))
-                twin["result"] = "CAUGHT" if emitted_expected else "MISSED"
-            else:
-                twin["result"] = "NOT_RUN"
+        status_map = twin.get("statuses")
+        status_value = status_map.get(twin["detector"]) if isinstance(status_map, dict) else None
+        state = status_value.get("state") if isinstance(status_value, dict) else status_value
+        if state != "completed":
+            twin["result"] = "NOT_RUN"
+        elif result is None:
+            emitted_expected = set(twin.get("expected_id_findings", []))
+            emitted_expected.update(set(twin.get("expected_ids", [])) & set(twin["emitted_ids"]))
+            twin["result"] = "CAUGHT" if emitted_expected else "MISSED"
         twin_id = twin["id"]
         if twin_id in seen:
             raise ValueError(f"duplicate twin id: {twin_id}")
@@ -79,11 +96,58 @@ def _read_scan(path: Path) -> ScanData:
         twins.append(twin)
     normalized: ScanData = {"twins": twins}
     control = raw.get("control")
-    if control is not None:
-        if not isinstance(control, dict):
-            raise ValueError("control must be an object")
-        normalized["control"] = cast(TwinRecord, control)
+    if not isinstance(control, dict):
+        raise ValueError("clean control must be an object")
+    if control.get("result") not in {"CLEAN", "FINDINGS", "INCOMPLETE"}:
+        raise ValueError("clean control result must be CLEAN, FINDINGS or INCOMPLETE")
+    for field in ("emitted_ids", "expected_id_findings", "medium_plus_findings", "not_applicable"):
+        value = control.get(field, [])
+        if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+            raise ValueError(f"control.{field} must be a list of strings")
+    normalized_control = cast(ControlRecord, control)
+    # Scan classifies medium+ findings. Recheck coverage here as well, so a
+    # stale CLEAN label cannot hide missing/disabled detector evidence.
+    statuses = normalized_control.get("statuses", {})
+    if not isinstance(statuses, dict):
+        raise ValueError("control.statuses must be an object")
+    incomplete = False
+    not_applicable = normalized_control.get("not_applicable", [])
+    for key in DETECTOR_KEYS:
+        status = statuses.get(key)
+        if not isinstance(status, dict):
+            incomplete = True
+            continue
+        # The scan establishes that the base has no package refs. This exact
+        # exemption does not cover disabled, incomplete or missing checks.
+        exempt = (
+            key == "pkgverify"
+            and not_applicable == ["pkgverify"]
+            and status.get("state") == "not_run"
+            and status.get("reason") == "baseline capture failed"
+        )
+        incomplete |= status.get("state") != "completed" and not exempt
+    incomplete |= bool(set(not_applicable) - {"pkgverify"})
+    # Older scans did not serialize a severity-filtered finding list. Empty
+    # emissions are unambiguous; non-empty emissions need a fresh scan.
+    incomplete |= bool(normalized_control.get("emitted_ids")) and "medium_plus_findings" not in control
+    if normalized_control.get("expected_id_findings") or normalized_control.get("medium_plus_findings"):
+        normalized_control["result"] = "FINDINGS"
+    elif incomplete and normalized_control["result"] == "CLEAN":
+        normalized_control["result"] = "INCOMPLETE"
+    normalized["control"] = normalized_control
     return normalized
+
+
+def _validate_inventory(current: ScanData, index_path: Path) -> None:
+    ids = json.loads(index_path.read_text(encoding="utf-8"))
+    if not isinstance(ids, list) or not ids or not all(isinstance(item, str) and item for item in ids):
+        raise ValueError("twin index must be a non-empty list of IDs")
+    if len(ids) != len(set(ids)):
+        raise ValueError("twin index contains duplicate IDs")
+    current_ids = {twin["id"] for twin in current["twins"]}
+    missing, extra = sorted(set(ids) - current_ids), sorted(current_ids - set(ids))
+    if missing or extra:
+        raise ValueError(f"results do not match twin index: missing={missing}, extra={extra}")
 
 
 def _ordered_ids(items: Sequence[str] | None) -> str:
@@ -99,7 +163,9 @@ def _matrix_rows(
     return categories, twin_ids, cells
 
 
-def _markdown(data: ScanData, regressions: Sequence[str], improvements: Sequence[str]) -> str:
+def _markdown(
+    data: ScanData, regressions: Sequence[str], improvements: Sequence[str], additions: Sequence[str]
+) -> str:
     twins = data["twins"]
     categories, twin_ids, cells = _matrix_rows(twins)
     lines = ["# Mutation Range report", "", "## Detection matrix", ""]
@@ -170,8 +236,13 @@ def _markdown(data: ScanData, regressions: Sequence[str], improvements: Sequence
     if control is not None:
         lines.extend(["", "## Clean base control", "", f"Result: {control.get('result', 'UNKNOWN')}."])
         lines.append(f"Expected-ID findings: {_ordered_ids(control.get('expected_id_findings'))}.")
+        lines.append(f"Medium+ findings: {_ordered_ids(control.get('medium_plus_findings'))}.")
         lines.append(f"Emitted IDs: {_ordered_ids(control.get('emitted_ids'))}.")
         lines.append(f"Not applicable: {_ordered_ids(control.get('not_applicable'))}.")
+        lines.append(
+            "Only pkgverify is exempt when the base has no package references and its state is "
+            "not_run with reason 'baseline capture failed'; all other control checks must complete."
+        )
         control_statuses = control.get("statuses")
         if isinstance(control_statuses, dict):
             state_text = ", ".join(
@@ -182,8 +253,14 @@ def _markdown(data: ScanData, regressions: Sequence[str], improvements: Sequence
         provenance = control.get("detector_provenance", {})
         lines.append(f"Package verification provenance: {_ordered_ids(provenance.get('pkgverify'))}.")
     lines.extend(["", "## Baseline diff", ""])
-    lines.append(f"Regressions: {len(regressions)}; improvements: {len(improvements)}.")
-    for title, changes in (("Regressions", regressions), ("Improvements", improvements)):
+    lines.append(
+        f"Regressions: {len(regressions)}; improvements: {len(improvements)}; additions: {len(additions)}."
+    )
+    for title, changes in (
+        ("Regressions", regressions),
+        ("Improvements", improvements),
+        ("Additions", additions),
+    ):
         if changes:
             lines.extend(["", f"{title}:"])
             lines.extend(f"- {change}" for change in changes)
@@ -237,18 +314,25 @@ def _html_report(markdown: str) -> str:
     )
 
 
-def _baseline_diff(current: ScanData, baseline: ScanData) -> tuple[list[str], list[str]]:
-    before = {twin["id"]: twin["result"] for twin in baseline.get("twins", [])}
+def _baseline_diff(current: ScanData, baseline: ScanData) -> tuple[list[str], list[str], list[str]]:
+    before = {twin["id"]: twin for twin in baseline["twins"]}
+    after = {twin["id"]: twin for twin in current["twins"]}
     regressions: list[str] = []
     improvements: list[str] = []
-    for twin in current["twins"]:
-        old = before.get(twin["id"])
+    additions = [f"{twin_id}: twin added" for twin_id in sorted(after.keys() - before.keys())]
+    regressions.extend(f"{twin_id}: twin removed" for twin_id in sorted(before.keys() - after.keys()))
+    for twin_id in sorted(before.keys() & after.keys()):
+        previous, twin = before[twin_id], after[twin_id]
+        for field in ("category", "detector"):
+            if previous[field] != twin[field]:
+                regressions.append(f"{twin_id}: {field} changed: {previous[field]} → {twin[field]}")
+        old = previous["result"]
         new = twin["result"]
         if (old == "CAUGHT" and new in {"MISSED", "NOT_RUN"}) or (old == "MISSED" and new == "NOT_RUN"):
             regressions.append(f"{twin['id']}: {old} → {new}")
         elif old == "MISSED" and new == "CAUGHT":
             improvements.append(f"{twin['id']}: MISSED → CAUGHT")
-    return regressions, improvements
+    return regressions, improvements, additions
 
 
 def build_report(
@@ -257,8 +341,13 @@ def build_report(
     html_path: Path,
     *,
     accept: bool = False,
+    index_path: Path | None = None,
 ) -> tuple[str, int]:
     current = _read_scan(results_path)
+    _validate_inventory(current, index_path or results_path.parent / "twins/index.json")
+    control_clean = current["control"]["result"] == "CLEAN"
+    if accept and not control_clean:
+        raise ValueError(f"cannot accept baseline: clean control is {current['control']['result']}")
     if accept:
         baseline_path.parent.mkdir(parents=True, exist_ok=True)
         baseline_path.write_text(
@@ -267,11 +356,11 @@ def build_report(
         baseline = current
     else:
         baseline = _read_scan(baseline_path)
-    regressions, improvements = _baseline_diff(current, baseline)
-    rendered = _markdown(current, regressions, improvements)
+    regressions, improvements, additions = _baseline_diff(current, baseline)
+    rendered = _markdown(current, regressions, improvements, additions)
     html_path.parent.mkdir(parents=True, exist_ok=True)
     html_path.write_text(_html_report(rendered), encoding="utf-8")
-    return rendered, int(bool(regressions) and not accept)
+    return rendered, int(bool(regressions) or not control_clean)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -281,11 +370,18 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--baseline", type=Path, default=root / "redteam/range/baseline.json")
     parser.add_argument("--html", type=Path, default=root / "build/redteam/range/report.html")
     parser.add_argument(
-        "--accept", action="store_true", help="replace the committed baseline with current results"
+        "--index", type=Path, help="generated twin index (default: twins/index.json beside results)"
+    )
+    parser.add_argument(
+        "--accept",
+        action="store_true",
+        help="replace the baseline only with complete results and a CLEAN control",
     )
     args = parser.parse_args(argv)
     try:
-        output, status = build_report(args.results, args.baseline, args.html, accept=args.accept)
+        output, status = build_report(
+            args.results, args.baseline, args.html, accept=args.accept, index_path=args.index
+        )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         print(f"report: {error}", file=sys.stderr)
         return 2

@@ -49,8 +49,8 @@ def _fetch(_reference: PackageRef) -> str:
 
 def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[str, object]:
     ids = json.loads((twins_dir / "index.json").read_text(encoding="utf-8"))
-    if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
-        raise ValueError("twin index must be a list of IDs")
+    if not isinstance(ids, list) or not ids or not all(isinstance(item, str) and item for item in ids):
+        raise ValueError("twin index must be a non-empty list of IDs")
     if len(ids) != len(set(ids)) or any(Path(item).name != item or item in {".", ".."} for item in ids):
         raise ValueError("twin index contains duplicate or unsafe IDs")
     base = ServerSurface.load(BASE / "surface.json")
@@ -113,18 +113,31 @@ def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[
     )
     control_ids = sorted({finding.check_id for finding in control.findings})
     negative = sorted(set(control_ids) & expected_all)
+    medium_plus = sorted(
+        {
+            finding.check_id
+            for finding in control.findings
+            if finding.severity in {"medium", "high", "critical"}
+        }
+    )
+    # The base has no package references, so there is nothing to verify. Only
+    # this exact not-run reason is exempt; disabled/incomplete checks still fail.
+    package_status = control.statuses.get("pkgverify")
     package_not_applicable = (
-        control.statuses["pkgverify"].state == "not_run"
-        and control.statuses["pkgverify"].reason == "baseline capture failed"
+        package_status is not None
+        and package_status.state == "not_run"
+        and package_status.reason == "baseline capture failed"
         and not resolve_package_refs(base.to_config())
     )
     control_result = (
         "FINDINGS"
-        if negative
+        if negative or medium_plus
         else "INCOMPLETE"
         if any(
-            s.state != "completed" and not (key == "pkgverify" and package_not_applicable)
-            for key, s in control.statuses.items()
+            (s := control.statuses.get(key)) is None
+            or s.state != "completed"
+            and not (key == "pkgverify" and package_not_applicable)
+            for key in DETECTOR_KEYS
         )
         else "CLEAN"
     )
@@ -134,6 +147,7 @@ def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[
             "result": control_result,
             "emitted_ids": control_ids,
             "expected_id_findings": negative,
+            "medium_plus_findings": medium_plus,
             "detector_provenance": {key: sorted(control.provenance.get(key, set())) for key in DETECTOR_KEYS},
             "not_applicable": ["pkgverify"] if package_not_applicable else [],
             "statuses": {
@@ -156,9 +170,11 @@ def main() -> int:
     twins = data["twins"]
     assert isinstance(control, dict) and isinstance(twins, list)
     print(
-        f"Scanned {len(twins)} twins; clean control expected-ID findings: {control['expected_id_findings']}"
+        f"Scanned {len(twins)} twins; clean control: {control['result']}; "
+        f"expected-ID findings: {control['expected_id_findings']}; "
+        f"medium+ findings: {control['medium_plus_findings']}"
     )
-    return int(bool(control["expected_id_findings"]))
+    return int(control["result"] != "CLEAN")
 
 
 if __name__ == "__main__":

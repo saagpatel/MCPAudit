@@ -20,8 +20,8 @@ def main() -> int:
     )
     control = data["control"]
     assert isinstance(control, dict)
-    if control["expected_id_findings"]:
-        print(f"Clean control emitted expected IDs: {control['expected_id_findings']}")
+    if control["result"] != "CLEAN":
+        print(f"Clean control is {control['result']}; baseline acceptance requires CLEAN.")
         return 1
     report, status = build_report(
         RESULTS,
