@@ -92,7 +92,9 @@ def test_accept_updates_baseline_without_regression_exit(tmp_path: Path) -> None
     assert json.loads(baseline.read_text(encoding="utf-8"))["twins"][0]["id"] == "twin-01"
 
 
-@pytest.mark.parametrize("change", ["removed", "renamed", "added", "category", "detector"])
+@pytest.mark.parametrize(
+    "change", ["removed", "renamed", "added", "category", "detector", "expected_ids", "allowed_collateral"]
+)
 def test_inventory_and_target_changes_require_acceptance(tmp_path: Path, change: str) -> None:
     results, baseline, report_html = (
         tmp_path / name for name in ("results.json", "baseline.json", "report.html")
@@ -107,6 +109,11 @@ def test_inventory_and_target_changes_require_acceptance(tmp_path: Path, change:
         current.append(_twin("new"))
     elif change == "category":
         current[-1]["category"] = "injection"
+    elif change == "expected_ids":
+        # Same detector, same CAUGHT result, different targeted check IDs.
+        current[-1]["expected_ids"] = ["MCP005"]
+    elif change == "allowed_collateral":
+        current[-1]["allowed_collateral"] = [*current[-1].get("allowed_collateral", []), "MCP043"]
     else:
         current[-1]["detector"] = "injection"
         current[-1]["statuses"] = {"injection": {"state": "completed"}}
@@ -122,7 +129,7 @@ def test_inventory_and_target_changes_require_acceptance(tmp_path: Path, change:
     if change in {"renamed", "added"}:
         added_id = "renamed" if change == "renamed" else "new"
         assert f"Additions:\n- {added_id}: twin added" in report
-    if change in {"category", "detector"}:
+    if change in {"category", "detector", "expected_ids", "allowed_collateral"}:
         assert f"external-schema-ref: {change} changed:" in report
     if change == "added":
         assert "Regressions: 0;" in report

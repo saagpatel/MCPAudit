@@ -326,6 +326,14 @@ def _baseline_diff(current: ScanData, baseline: ScanData) -> tuple[list[str], li
         for field in ("category", "detector"):
             if previous[field] != twin[field]:
                 regressions.append(f"{twin_id}: {field} changed: {previous[field]} → {twin[field]}")
+        # Retargeting a twin's check IDs (or widening what counts as collateral) changes what a
+        # CAUGHT result means, so it needs explicit acceptance even when the result is unchanged.
+        for id_field in ("expected_ids", "allowed_collateral"):
+            old_ids = sorted(set(previous.get(id_field, [])))
+            new_ids = sorted(set(twin.get(id_field, [])))
+            if old_ids != new_ids:
+                old_text, new_text = ", ".join(old_ids) or "—", ", ".join(new_ids) or "—"
+                regressions.append(f"{twin_id}: {id_field} changed: {old_text} → {new_text}")
         old = previous["result"]
         new = twin["result"]
         if (old == "CAUGHT" and new in {"MISSED", "NOT_RUN"}) or (old == "MISSED" and new == "NOT_RUN"):
