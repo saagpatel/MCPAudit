@@ -463,10 +463,17 @@ _operators: list[MutationOperator] = [
         ("tools[0].name", "companions.fleet"),
         lambda base: (
             base.surface.model_copy(
-                update={"tools": [_clone_tool(base.surface.tools[0], name="list")]}, deep=True
+                update={"tools": [_clone_tool(base.surface.tools[0], name="list_entries")]}, deep=True
             ),
             base.source,
-            CompanionInputs(fleet=(_clean_companion(),)),
+            CompanionInputs(
+                fleet=(
+                    _clean_companion().model_copy(
+                        update={"tools": [_clone_tool(_clean_companion().tools[0], name="list_entries")]},
+                        deep=True,
+                    ),
+                )
+            ),
         ),
     ),
     _make(

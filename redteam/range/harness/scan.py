@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from mcp_audit.pkgverify import PackageRef
+from mcp_audit.pkgverify import PackageRef, resolve_package_refs
 from redteam.range.gen.__main__ import BASE, OUTPUT, ROOT
 from redteam.range.harness.adapter import DETECTOR_KEYS, DetectorKey, IntegrityInput, run_detectors
 from redteam.surface import ServerSurface
@@ -97,7 +97,10 @@ def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[
                 "allowed_collateral": sorted(allowed),
                 "result": outcome,
                 "reason": status.reason,
-                "statuses": {twin.detector: {"state": status.state, "reason": status.reason}},
+                "statuses": {
+                    key: {"state": value.state, "reason": value.reason}
+                    for key, value in result.statuses.items()
+                },
                 "predicted": twin.predicted,
                 "emitted_ids": emitted,
                 "collateral_ids": sorted(set(emitted) & allowed - expected),
@@ -110,11 +113,19 @@ def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[
     )
     control_ids = sorted({finding.check_id for finding in control.findings})
     negative = sorted(set(control_ids) & expected_all)
+    package_not_applicable = (
+        control.statuses["pkgverify"].state == "not_run"
+        and control.statuses["pkgverify"].reason == "baseline capture failed"
+        and not resolve_package_refs(base.to_config())
+    )
     control_result = (
         "FINDINGS"
         if negative
         else "INCOMPLETE"
-        if any(s.state != "completed" for s in control.statuses.values())
+        if any(
+            s.state != "completed" and not (key == "pkgverify" and package_not_applicable)
+            for key, s in control.statuses.items()
+        )
         else "CLEAN"
     )
     return {
@@ -124,6 +135,7 @@ def scan(twins_dir: Path = OUTPUT, *, disabled: set[str] | None = None) -> dict[
             "emitted_ids": control_ids,
             "expected_id_findings": negative,
             "detector_provenance": {key: sorted(control.provenance.get(key, set())) for key in DETECTOR_KEYS},
+            "not_applicable": ["pkgverify"] if package_not_applicable else [],
             "statuses": {
                 key: {"state": value.state, "reason": value.reason} for key, value in control.statuses.items()
             },

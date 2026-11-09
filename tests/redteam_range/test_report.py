@@ -1,10 +1,13 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from redteam.range.report.report import build_report
 
 
-def test_report_renders_tables_and_flags_caught_to_not_run_regression(tmp_path: Path) -> None:
+@pytest.mark.parametrize("previous", ["CAUGHT", "MISSED"])
+def test_report_renders_tables_and_flags_not_run_regression(tmp_path: Path, previous: str) -> None:
     results = tmp_path / "results.json"
     baseline = tmp_path / "baseline.json"
     report_html = tmp_path / "report.html"
@@ -24,7 +27,7 @@ def test_report_renders_tables_and_flags_caught_to_not_run_regression(tmp_path: 
     results.write_text(json.dumps({"twins": [twin]}), encoding="utf-8")
     baseline.write_text(
         json.dumps(
-            {"twins": [{**twin, "result": "CAUGHT", "statuses": {"injection": {"state": "completed"}}}]}
+            {"twins": [{**twin, "result": previous, "statuses": {"injection": {"state": "completed"}}}]}
         ),
         encoding="utf-8",
     )
@@ -32,7 +35,7 @@ def test_report_renders_tables_and_flags_caught_to_not_run_regression(tmp_path: 
     report, exit_code = build_report(results, baseline, report_html)
 
     assert exit_code == 1
-    assert "twin-01: CAUGHT → NOT_RUN" in report
+    assert f"twin-01: {previous} → NOT_RUN" in report
     assert "schema <unsafe>" in report
     html_output = report_html.read_text(encoding="utf-8")
     assert "<table>" in html_output

@@ -64,7 +64,7 @@ def test_base_is_clean() -> None:
     assert all(result.statuses[key].state == "completed" for key in DETECTOR_KEYS if key != "pkgverify")
     assert result.statuses["pkgverify"].state == "not_run"
     assert not [finding for finding in result.findings if finding.severity in {"medium", "high"}]
-    assert "MOCKED" not in result.provenance
+    assert result.provenance == {}
 
 
 def test_integrity_materializes_only_safe_temporary_paths() -> None:
@@ -425,10 +425,21 @@ def test_injected_package_fetch_is_mocked_and_never_uses_live_fetch() -> None:
 
     package_findings = [finding for finding in result.findings if finding.detector == "pkgverify"]
     assert result.statuses["pkgverify"].state == "completed"
-    assert "MOCKED" in result.provenance
+    assert result.provenance == {"pkgverify": {"MOCKED"}}
     assert len(package_findings) == 1
     assert package_findings[0].check_id == "MCP025"
     assert fetch.calls == 2
+
+
+def test_injected_package_fetch_not_called_has_no_provenance() -> None:
+    current = surface()
+
+    def fetch(_reference: PackageRef) -> str:
+        raise AssertionError("non-package configuration must not fetch")
+
+    result = run_detectors(current, baseline=current, fleet=[], package_fetch=fetch)
+    assert result.statuses["pkgverify"].state == "not_run"
+    assert result.provenance == {}
 
 
 @pytest.mark.parametrize(
@@ -463,7 +474,7 @@ def test_package_verification_requires_a_comparison(
 
     assert result.statuses["pkgverify"].state == "not_run"
     assert result.statuses["pkgverify"].reason == reason
-    assert result.provenance == {"MOCKED"}
+    assert result.provenance == {"pkgverify": {"MOCKED"}}
     assert len(calls) == len(hashes)
     if len(hashes) == 1:
         assert not result.findings

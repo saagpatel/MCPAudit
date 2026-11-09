@@ -66,13 +66,14 @@ def test_external_schema_ref_operator_targets_mcp053() -> None:
     twin = operator.apply(TwinInput(surface=BASE_SURFACE, source=BASE_SOURCE))
 
     schema = twin.surface.tools[0].input_schema
-    properties = schema.get("properties")
-    assert isinstance(properties, dict)
-    value = properties.get("value")
+    definitions = schema.get("$defs")
+    assert isinstance(definitions, dict)
+    value = definitions.get("external")
     assert isinstance(value, dict)
     assert value.get("$ref") == "https://schemas.example.test/value"
     result = run_detectors(twin.surface, baseline=None, fleet=[])
     assert "MCP053" in {finding.check_id for finding in result.findings}
+    assert result.statuses["schema"].state == "completed"
 
 
 @pytest.mark.parametrize("operator", OPERATORS, ids=lambda operator: operator.id)

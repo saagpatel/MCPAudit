@@ -33,7 +33,7 @@ from mcp_audit.models import (
     TrifectaFinding,
 )
 from mcp_audit.pinning import PinStore
-from mcp_audit.pkgverify import FetchHash, PackageVerifier, verification_coverage
+from mcp_audit.pkgverify import FetchHash, PackageRef, PackageVerifier, verification_coverage
 from mcp_audit.provenance import ProvenanceAnalyzer
 from mcp_audit.schema_rules import scan_tool_schema
 from mcp_audit.shadowing import ShadowingAnalyzer
@@ -121,7 +121,7 @@ class AdapterFinding:
 class AdapterResult:
     findings: list[AdapterFinding] = field(default_factory=list)
     statuses: dict[DetectorKey, DetectorStatus] = field(default_factory=dict)
-    provenance: set[Literal["MOCKED"]] = field(default_factory=set)
+    provenance: dict[DetectorKey, set[Literal["MOCKED"]]] = field(default_factory=dict)
 
 
 def _severity(finding: object) -> str:
@@ -466,9 +466,12 @@ def run_detectors(
             # PackageVerifier uses ``fetch or RegistryClient().fetch_hash``;
             # wrap the injected callable so a falsey callable cannot select the
             # live registry client.
-            verifier = PackageVerifier(fetch=lambda reference: package_fetch(reference))
+            def mocked_fetch(reference: PackageRef) -> str | None:
+                result.provenance.setdefault("pkgverify", set()).add("MOCKED")
+                return package_fetch(reference)
+
+            verifier = PackageVerifier(fetch=mocked_fetch)
             baseline_hashes = verifier.capture(baseline.to_config())
-            result.provenance.add("MOCKED")
             current_config = surface.to_config()
             verified_refs: set[str] = set()
             if not baseline_hashes:

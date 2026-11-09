@@ -30,6 +30,7 @@ class TwinRecord(TypedDict, total=False):
     statuses: dict[str, object]
     detector_provenance: dict[str, list[str]]
     expected_id_findings: list[str]
+    not_applicable: list[str]
 
 
 class ScanData(TypedDict, total=False):
@@ -133,17 +134,23 @@ def _markdown(data: ScanData, regressions: Sequence[str], improvements: Sequence
             "## Per-twin results",
             "",
             "| Twin | Category | Detector | Detector state | Expected IDs | Result | Predicted | "
-            "Emitted IDs | Allowed collateral | Unexpected IDs | Provenance | Reason |",
-            "|---|---|---|---|---|---|---|---|---|---|---|---|",
+            "Emitted IDs | Allowed collateral | Unexpected IDs | Provenance | Reason | "
+            "Other incomplete detectors |",
+            "|---|---|---|---|---|---|---|---|---|---|---|---|---|",
         ]
     )
     for twin in twins:
         statuses = twin.get("statuses", {})
         status_value = statuses.get(twin["detector"]) if isinstance(statuses, dict) else None
         detector_state = status_value.get("state", "") if isinstance(status_value, dict) else ""
+        other_incomplete = "; ".join(
+            f"{key}: {value.get('reason') or 'incomplete'}"
+            for key, value in sorted(statuses.items())
+            if key != twin["detector"] and isinstance(value, dict) and value.get("state") == "incomplete"
+        )
         lines.append(
             "| {id} | {category} | {detector} | {state} | {expected} | {result} | {predicted} | "
-            "{emitted} | {allowed} | {unexpected} | {provenance} | {reason} |".format(
+            "{emitted} | {allowed} | {unexpected} | {provenance} | {reason} | {other_incomplete} |".format(
                 id=twin["id"],
                 category=twin["category"],
                 detector=twin["detector"],
@@ -156,6 +163,7 @@ def _markdown(data: ScanData, regressions: Sequence[str], improvements: Sequence
                 unexpected=_ordered_ids(twin.get("unexpected_ids")),
                 provenance=_ordered_ids(twin.get("provenance")),
                 reason=twin.get("reason") or "",
+                other_incomplete=other_incomplete,
             )
         )
     control = data.get("control")
@@ -163,6 +171,7 @@ def _markdown(data: ScanData, regressions: Sequence[str], improvements: Sequence
         lines.extend(["", "## Clean base control", "", f"Result: {control.get('result', 'UNKNOWN')}."])
         lines.append(f"Expected-ID findings: {_ordered_ids(control.get('expected_id_findings'))}.")
         lines.append(f"Emitted IDs: {_ordered_ids(control.get('emitted_ids'))}.")
+        lines.append(f"Not applicable: {_ordered_ids(control.get('not_applicable'))}.")
         control_statuses = control.get("statuses")
         if isinstance(control_statuses, dict):
             state_text = ", ".join(

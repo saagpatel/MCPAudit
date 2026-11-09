@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from redteam.range.gen.__main__ import generate
+from redteam.range.harness import scan as scan_module
+from redteam.range.harness.adapter import DetectorStatus, run_detectors
 from redteam.range.harness.scan import scan
 from redteam.range.mutations import OPERATORS
 from redteam.range.report.report import build_report
@@ -19,6 +23,7 @@ def test_extension_and_forced_injection_regression(tmp_path: Path) -> None:
     control = normal["control"]
     assert isinstance(records, list) and len(records) == 31
     assert isinstance(control, dict) and control["expected_id_findings"] == []
+    assert control["result"] == "CLEAN" and control["not_applicable"] == ["pkgverify"]
     assert [item["id"] for item in records] == [operator.id for operator in OPERATORS]
     assert all(not item["provenance"] and not item["unexpected_ids"] for item in records)
     assert all(
@@ -56,3 +61,37 @@ def test_extension_and_forced_injection_regression(tmp_path: Path) -> None:
     injection = [item for item in records if item["detector"] == "injection"]
     assert injection and status == 1
     assert all(f"{item['id']}: {item['result']} → NOT_RUN" in report for item in injection)
+
+
+def test_incomplete_and_mocked_are_scoped_to_target(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    twins = tmp_path / "twins"
+    generate(twins)
+    original = run_detectors
+    calls = 0
+
+    def run(*args: object, **kwargs: object) -> object:
+        nonlocal calls
+        result = original(*args, **kwargs)  # type: ignore[arg-type]
+        calls += 1
+        if calls == 1:
+            result.statuses["injection"] = DetectorStatus("incomplete", "target truncated")
+            result.provenance["pkgverify"] = {"MOCKED"}
+        elif calls == 2:
+            result.statuses["permissions"] = DetectorStatus("incomplete", "other truncated")
+            result.provenance["injection"] = {"MOCKED"}
+        return result
+
+    monkeypatch.setattr(scan_module, "run_detectors", run)
+    data = scan(twins)
+    records = data["twins"]
+    assert isinstance(records, list)
+    first, second = records[:2]
+    assert first["result"] == "NOT_RUN" and first["reason"] == "target truncated"
+    assert first["provenance"] == []
+    assert second["result"] in {"CAUGHT", "MISSED"} and second["provenance"] == ["MOCKED"]
+    assert second["statuses"]["permissions"]["reason"] == "other truncated"
+    results, baseline, output = (tmp_path / name for name in ("results.json", "baseline.json", "report.html"))
+    results.write_text(json.dumps(data), encoding="utf-8")
+    baseline.write_text(json.dumps(data), encoding="utf-8")
+    report, _ = build_report(results, baseline, output)
+    assert "permissions: other truncated" in report

@@ -18,9 +18,8 @@ def operator() -> MutationOperator:
         schema = tool.model_copy(
             update={
                 "input_schema": {
-                    "type": "object",
-                    "properties": {"value": {"$ref": "https://schemas.example.test/value"}},
-                    "required": ["value"],
+                    **tool.input_schema,
+                    "$defs": {"external": {"$ref": "https://schemas.example.test/value"}},
                 }
             },
             deep=True,
