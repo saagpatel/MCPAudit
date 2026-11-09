@@ -1,0 +1,20 @@
+{
+  "files": {
+    "README.md": "17dd135ef1c9ee3e604b6852fafc9ad9b4d38bd80bd2346cb7cf71324dde44d0",
+    "config.json": "df3508b6d3ba8e76b79212d597e67a0c175c4803660c6ba1d3b86726dc7eed88",
+    "fastmcp.json": "11d50412d4de3cca88f14ee7f49e9efc8da8bfa7508cbdb73b1d10b65b02802e",
+    "pyproject.toml": "49f85e9941f24c6bc9fcabacc27b02fa1239ec8d35e45d8a8af684af78e167cf",
+    "server.py.txt": "f337b741c04658dedef3f37ceb664f5ece8b4e7e21ce20a175e9811f094bcd3d",
+    "test_server.py.txt": "8fe70c519dd31635f47e1eb549d52cf9e110c1287e96a570c66df71b29e9f5be"
+  },
+  "init_command": [
+    "mcpforge",
+    "init",
+    "range-base",
+    "--transport",
+    "stdio",
+    "-o",
+    "<fresh-tmp-dir>"
+  ],
+  "mcpforge_version": "mcpforge, version 0.3.2"
+}

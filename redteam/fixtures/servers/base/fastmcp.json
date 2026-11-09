@@ -1,0 +1,36 @@
+{
+  "$schema": "https://gofastmcp.com/public/schemas/fastmcp.json/v1.json",
+  "source": {
+    "path": "server.py",
+    "entrypoint": "mcp"
+  },
+  "environment": {
+    "type": "uv",
+    "python": ">=3.12",
+    "dependencies": [
+      "fastmcp>=3.1.0"
+    ]
+  },
+  "deployment": {
+    "transport": "stdio",
+    "host": "127.0.0.1",
+    "port": 8000,
+    "path": "/mcp/",
+    "log_level": "INFO",
+    "profiles": {
+      "local_stdio": {
+        "transport": "stdio",
+        "command": "fastmcp run server.py"
+      },
+      "local_http": {
+        "transport": "http",
+        "url": "http://127.0.0.1:8000/mcp/"
+      },
+      "production_http": {
+        "transport": "http",
+        "url": "https://your-domain.example/mcp/",
+        "requires_auth": false
+      }
+    }
+  }
+}

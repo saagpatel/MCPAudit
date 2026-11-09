@@ -1,4 +1,4 @@
-.PHONY: install check test lint format typecheck clean audit help
+.PHONY: install check test lint format typecheck clean audit help base
 
 # Default target
 help:
@@ -12,10 +12,14 @@ help:
 	@echo "  typecheck  Run mypy type checking (strict)"
 	@echo "  clean      Remove build artifacts and __pycache__ directories"
 	@echo "  audit      Run mcp-audit against your local MCP config"
+	@echo "  base       Verify inert mcpforge fixture (REGEN=1 to replace)"
 	@echo ""
 
 install:
 	uv sync --all-packages --locked --dev
+
+base:
+	uv run --locked python -m redteam.range.base.build $(if $(filter 1,$(REGEN)),--regen,)
 
 check:
 	@command -v uv >/dev/null 2>&1 || { echo "uv is required; install it from https://docs.astral.sh/uv/" >&2; exit 127; }

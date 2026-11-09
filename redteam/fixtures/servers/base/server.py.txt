@@ -1,0 +1,15 @@
+"""range-base MCP server."""
+
+from fastmcp import FastMCP
+
+mcp = FastMCP("range-base")
+
+
+@mcp.tool
+async def echo(message: str) -> dict:
+    """Echo a message back. Replace this with your own tools."""
+    return {"echo": message}
+
+
+if __name__ == "__main__":
+    mcp.run(transport="stdio")

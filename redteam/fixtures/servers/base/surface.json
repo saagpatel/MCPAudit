@@ -1,0 +1,34 @@
+{
+  "config": {
+    "args": [
+      "server.py"
+    ],
+    "command": "python",
+    "env_keys": [],
+    "transport": "stdio",
+    "url": null
+  },
+  "provenance": null,
+  "resources": [],
+  "server_name": "range-base",
+  "source": "ast",
+  "tools": [
+    {
+      "annotations": null,
+      "description": "Echo a message back. Replace this with your own tools.",
+      "input_schema": {
+        "properties": {
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "type": "object"
+      },
+      "name": "echo",
+      "title": null
+    }
+  ]
+}
