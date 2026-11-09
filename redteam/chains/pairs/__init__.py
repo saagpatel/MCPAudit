@@ -1,25 +1,18 @@
 """Resolve explicit configuration metadata and form cross-server candidates."""
 
+import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import TypeAdapter, ValidationError
 
+from mcp_audit.api import parse_config as parse_mcp_config
+from mcp_audit.models import ServerConfig
+from mcp_audit.pinning import PinStore
 from redteam.catalog import load_catalog
 from redteam.chains.labeler import ToolLabel, label_server
 from redteam.chains.templates import TEMPLATES, Template
-from redteam.surface import ServerSurface
-
-
-class _Entry(BaseModel):
-    model_config = ConfigDict(strict=True, extra="ignore")
-    command: str | None = None
-    args: list[str] = Field(default_factory=list)
-
-
-class _Config(BaseModel):
-    model_config = ConfigDict(strict=True, extra="ignore")
-    mcpServers: dict[str, _Entry]
+from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceTool
 
 
 @dataclass(frozen=True)
@@ -28,6 +21,8 @@ class ConfiguredServer:
     surface: ServerSurface | None
     roots: tuple[str, ...] = ()
     reason: str | None = None
+    env_keys: tuple[str, ...] = ()
+    source: str = "unknown"
 
     @property
     def tool_surface(self) -> str:
@@ -63,27 +58,109 @@ class CandidateChain:
         return self.template.preconditions
 
 
-def load_config(path: Path, surfaces_file: Path | None = None) -> list[ConfiguredServer]:
-    """Read an explicit config and optional adjacent name-to-surface-filename mapping."""
-    if path.suffix != ".json" or path.name.startswith(".env"):
-        raise ValueError("config must be an explicit JSON file")
-    config = _Config.model_validate_json(path.read_text(encoding="utf-8"))
-    explicit: dict[str, str] = {}
-    if surfaces_file is not None:
-        if (
-            surfaces_file.suffix != ".json"
-            or surfaces_file.name.startswith(".env")
-            or surfaces_file.resolve().parent != path.resolve().parent
-        ):
-            raise ValueError("surfaces file must be adjacent to config")
-        explicit = TypeAdapter(dict[str, str]).validate_json(
-            surfaces_file.read_text(encoding="utf-8"), strict=True
+def _read_configs(path: Path) -> list[ServerConfig]:
+    if path.name.startswith(".env") or path.suffix not in {".json", ".toml"}:
+        raise ValueError("config must be an explicit JSON or TOML file")
+    try:
+        content = path.read_text(encoding="utf-8")
+        if path.suffix == ".json":
+            return parse_mcp_config(content, source=path.name)
+        document = tomllib.loads(content)
+        server_map = document.get("mcp_servers")
+        if not isinstance(server_map, dict):
+            raise ValueError("Codex TOML must contain [mcp_servers.*] tables")
+        return parse_mcp_config({"mcpServers": server_map}, source=path.name)
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise ValueError(f"could not parse explicit config ({type(exc).__name__})") from exc
+
+
+def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | None, bool]:
+    """Return a launch-identity-matched usable pin surface and withheld state."""
+    path = pins_dir / ".mcp-audit-pins.yaml"
+    if not path.is_file():
+        return None, False
+    store = PinStore(
+        path=path,
+        signing_key=pins_dir / "signing-key.pem",
+        trusted_keys_path=pins_dir / "trusted-keys.yaml",
+        record_verification=False,
+    )
+    if store.read_error is not None:
+        return None, True
+    identity_fields = ("command", "args", "url", "transport", "env_keys", "headers_keys")
+    candidate_names = sorted(store.pinned_servers())
+    withheld_match = False
+    matches: list[ServerSurface] = []
+    for name in candidate_names:
+        # Unsigned v2 snapshots are usable through the normal read gate. A None
+        # snapshot cannot establish launch identity and therefore cannot supply
+        # tools; report UNKNOWN rather than trusting the same-name catalog row.
+        baseline_config = store.baseline_config(name)
+        if baseline_config is None:
+            if name == config.name:
+                withheld_match = True
+            continue
+        current = {
+            "command": config.command,
+            "args": list(config.args),
+            "url": config.url,
+            "transport": config.transport.value,
+            "env_keys": sorted(config.env_keys),
+            "headers_keys": sorted(config.headers_keys),
+        }
+        if any(baseline_config.get(field) != current[field] for field in identity_fields):
+            continue
+        tools = store.baseline_tools(name)
+        if not tools:
+            withheld_match = True
+            continue
+        matches.append(
+            ServerSurface(
+                server_name=config.name,
+                tools=[
+                    SurfaceTool(
+                        name=tool.name,
+                        description=tool.description,
+                        input_schema=tool.input_schema or {},
+                        annotations=(
+                            SurfaceAnnotations.model_validate(
+                                tool.annotations.model_dump(exclude_none=True), strict=True
+                            )
+                            if tool.annotations is not None
+                            else None
+                        ),
+                        title=tool.title,
+                    )
+                    for tool in tools
+                ],
+                source="pin",
+                provenance="historical/unverified saved pin matching launch identity",
+            )
         )
+    if withheld_match:
+        return None, True
+    if matches:
+        first = matches[0]
+        signature = first.model_dump(mode="json", exclude_none=True)
+        if any(match.model_dump(mode="json", exclude_none=True) != signature for match in matches[1:]):
+            return None, True
+        return first, False
+    return None, withheld_match
+
+
+def resolve_configs(
+    configs: list[ServerConfig],
+    explicit_surfaces: dict[str, ServerSurface] | None = None,
+    pins_dir: Path | None = None,
+) -> list[ConfiguredServer]:
+    """Resolve server surfaces from explicit fixture, selected pins, then catalog."""
+    explicit = explicit_surfaces or {}
     catalog = load_catalog()
     result: list[ConfiguredServer] = []
-    for name, entry in sorted(config.mcpServers.items()):
-        args = entry.args
-        command = entry.command
+    for config in sorted(configs, key=lambda server: server.name):
+        name = config.name
+        args = config.args
+        command = config.command
         identity = None
         roots: tuple[str, ...] = ()
         if command == "uvx" and args and args[0] == "mcp-server-git":
@@ -98,26 +175,70 @@ def load_config(path: Path, surfaces_file: Path | None = None) -> list[Configure
             identity = "npm:@modelcontextprotocol/server-filesystem"
             if all(isinstance(root, str) and not root.startswith("-") for root in args[2:]):
                 roots = tuple(args[2:])
-        surface = None
-        if name in explicit:
-            filename = explicit[name]
-            surface_path = path.parent / filename
-            if (
-                Path(filename).name != filename
-                or not filename.endswith(".json")
-                or filename.startswith(".env")
-                or surface_path.resolve().parent != path.resolve().parent
-            ):
-                raise ValueError("surface must be a filename adjacent to config")
-            surface = ServerSurface.load(surface_path)
-        elif identity:
+        surface = explicit.get(name)
+        source = "explicit" if surface is not None else "unknown"
+        pin_withheld = False
+        if surface is None and pins_dir is not None:
+            surface, pin_withheld = _pin_surface(pins_dir, config)
+            if surface is not None:
+                source = "pin"
+        if surface is None and not pin_withheld and identity:
             surface = catalog[identity]
+            source = "catalog"
         if surface is not None:
             surface = surface.model_copy(update={"server_name": name})
         result.append(
-            ConfiguredServer(name, surface, roots, None if surface else "No explicit or catalog surface")
+            ConfiguredServer(
+                name,
+                surface,
+                roots,
+                None
+                if surface
+                else (
+                    "Matching pin baseline was withheld or lacked verifiable launch identity"
+                    if pin_withheld
+                    else "No explicit, pin, or catalog surface"
+                ),
+                tuple(sorted(config.env_keys)),
+                source,
+            )
         )
     return result
+
+
+def load_config(
+    path: Path,
+    surfaces_file: Path | None = None,
+    pins_dir: Path | None = None,
+) -> list[ConfiguredServer]:
+    """Read an explicit JSON/Codex TOML config and optional explicit surfaces file."""
+    explicit: dict[str, ServerSurface] = {}
+    if surfaces_file is not None:
+        if (
+            surfaces_file.suffix != ".json"
+            or surfaces_file.name.startswith(".env")
+            or surfaces_file.resolve().parent != path.resolve().parent
+        ):
+            raise ValueError("surfaces file must be adjacent to config")
+        try:
+            mapping = TypeAdapter(dict[str, str]).validate_json(
+                surfaces_file.read_text(encoding="utf-8"), strict=True
+            )
+        except (OSError, UnicodeError, ValidationError) as exc:
+            raise ValueError("surfaces mapping must be a JSON object of server names to filenames") from exc
+        for name, filename in mapping.items():
+            if (
+                not isinstance(filename, str)
+                or Path(filename).name != filename
+                or not filename.endswith(".json")
+                or filename.startswith(".env")
+            ):
+                raise ValueError("surface must be a filename adjacent to config")
+            target = path.parent / filename
+            if target.resolve().parent != path.resolve().parent:
+                raise ValueError("surface must be a filename adjacent to config")
+            explicit[name] = ServerSurface.load(target)
+    return resolve_configs(_read_configs(path), explicit, pins_dir)
 
 
 def pair_servers(
