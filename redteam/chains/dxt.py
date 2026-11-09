@@ -12,6 +12,15 @@ from mcp_audit.models import ServerConfig
 from redteam.surface import ServerSurface, SurfaceTool
 
 
+def metadata_inputs(extensions: Path, settings: Path) -> list[Path]:
+    """List metadata destinations, including sources that yield no servers.
+
+    Register files as well as directories so aliases outside the directories
+    cannot overwrite them. Only enumerate names; do not parse their contents.
+    """
+    return [*sorted(extensions.glob("*/manifest.json")), *sorted(settings.glob("*.json"))]
+
+
 def extension_directory(provenance: object) -> Path | None:
     """Return a DXT manifest's parent only when it has the required layout."""
     records = provenance if isinstance(provenance, (list, tuple)) else [provenance]

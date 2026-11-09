@@ -93,6 +93,12 @@ def main(argv: list[str] | None = None) -> int:
                 dxt_dir=options.dxt_dir,
                 input_paths=additional_inputs,
                 input_directories=directories,
+                validate_inputs=lambda: _validate_outputs(
+                    [options.json_path, options.md_path],
+                    [*input_paths, *additional_inputs],
+                    options.pins,
+                    directories,
+                ),
             )
         else:
             servers = load_config(

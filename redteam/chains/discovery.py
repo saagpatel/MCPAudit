@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import importlib
 import inspect
-from dataclasses import replace
+from collections.abc import Callable
+from copy import copy
+from dataclasses import is_dataclass, replace
 from pathlib import Path
 from types import ModuleType
 
@@ -12,7 +14,7 @@ from mcp_audit.models import ClientType, ServerConfig, TransportType
 from redteam.catalog import CATALOG, CATALOG_FILES
 from redteam.chains import ShadowImportError as ShadowImportError
 from redteam.chains import ensure_repo_import
-from redteam.chains.dxt import extension_directory
+from redteam.chains.dxt import extension_directory, metadata_inputs
 from redteam.chains.pairs import ConfiguredServer, resolve_configs
 
 DEFAULT_COLLECTORS = (
@@ -115,6 +117,41 @@ def _protect_source_paths(entry: object, input_paths: list[Path]) -> None:
                 input_paths.append(Path(value))
 
 
+def _path(paths: object, field: str) -> Path:
+    value: object = getattr(paths, field, None)
+    if not isinstance(value, (str, Path)) or not str(value):
+        raise ShadowImportError(f"incompatible shadow-mcp: missing DiscoveryPaths.{field}")
+    return Path(value)
+
+
+def _protect_configured_paths(
+    paths: object,
+    include_claude_code: bool,
+    input_paths: list[Path],
+    input_directories: list[Path],
+) -> None:
+    """Register collector inputs even if parsing fails or returns no servers."""
+    input_paths.extend(_path(paths, field) for field in ("claude_desktop_config", "codex_config"))
+    profiles = _path(paths, "codex_profiles_dir")
+    input_paths.extend(sorted(profiles.glob("*.toml")))
+    input_paths.extend(sorted(profiles.glob("*/config.toml")))
+    projects = _path(paths, "projects_root")
+    input_paths.extend(sorted(projects.rglob(".mcp.json")))
+    if include_claude_code:
+        input_paths.append(_path(paths, "claude_code_config"))
+    extensions = _path(paths, "claude_extensions_dir")
+    # The collector uses its configured settings path; manifest resolution also
+    # reads the conventional sibling directory. Protect both if they differ.
+    settings_roots = {
+        _path(paths, "claude_extensions_settings_dir"),
+        extensions.parent / "Claude Extensions Settings",
+    }
+    input_directories.append(extensions)
+    for settings in sorted(settings_roots):
+        input_directories.append(settings)
+        input_paths.extend(metadata_inputs(extensions, settings))
+
+
 def discover_servers(
     *,
     include_claude_code: bool = False,
@@ -122,15 +159,17 @@ def discover_servers(
     dxt_dir: Path | None = None,
     input_paths: list[Path] | None = None,
     input_directories: list[Path] | None = None,
+    validate_inputs: Callable[[], None] | None = None,
 ) -> list[ConfiguredServer]:
     """Run only explicitly allowlisted collectors; never fall back to defaults."""
     ensure_repo_import()
-    if input_paths is not None:
-        input_paths.extend(CATALOG / name for name in CATALOG_FILES.values())
-        if pins_dir is not None:
-            input_paths.extend(
-                pins_dir / name for name in (".mcp-audit-pins.yaml", "signing-key.pem", "trusted-keys.yaml")
-            )
+    input_paths = input_paths if input_paths is not None else []
+    input_directories = input_directories if input_directories is not None else []
+    input_paths.extend(CATALOG / name for name in CATALOG_FILES.values())
+    if pins_dir is not None:
+        input_paths.extend(
+            pins_dir / name for name in (".mcp-audit-pins.yaml", "signing-key.pem", "trusted-keys.yaml")
+        )
     _module("shadow_mcp")
     paths_class = _required(_module("shadow_mcp.config"), "DiscoveryPaths")
     default: object = getattr(paths_class, "default", None)
@@ -150,6 +189,24 @@ def discover_servers(
     if any(not callable(factory) for factory in factories):
         raise ShadowImportError("incompatible shadow-mcp: collector is not callable")
     paths: object = default()
+    if dxt_dir is not None:
+        overrides = {
+            "claude_extensions_dir": dxt_dir,
+            "claude_extensions_settings_dir": dxt_dir.parent / "Claude Extensions Settings",
+        }
+        try:
+            if is_dataclass(paths) and not isinstance(paths, type):
+                paths = replace(paths, **overrides)
+            else:
+                paths = copy(paths)
+                for field, value in overrides.items():
+                    setattr(paths, field, value)
+        except (AttributeError, TypeError) as exc:
+            raise ShadowImportError("incompatible shadow-mcp: DiscoveryPaths DXT fields") from exc
+    dxt_dir = _path(paths, "claude_extensions_dir")
+    _protect_configured_paths(paths, include_claude_code, input_paths, input_directories)
+    if validate_inputs is not None:
+        validate_inputs()
     selected = [factory(paths) for factory in factories if callable(factory)]
     result: object = discover(paths, include_processes=False, include_cli=False, collectors=selected)
     entries: object = getattr(result, "servers", None)
@@ -168,10 +225,6 @@ def discover_servers(
     source_counts = {key: counts[key] for key in sorted(counts) if key in KNOWN_SOURCE_KEYS}
     if unknown_count:
         source_counts["unrecognized"] = unknown_count
-    if dxt_dir is None:
-        default_dir: object = getattr(paths, "claude_extensions_dir", None)
-        if isinstance(default_dir, (str, Path)):
-            dxt_dir = Path(default_dir)
     extension_paths: dict[tuple[str, str | None, tuple[str, ...], str | None], Path] = {}
     provenance_paths: dict[
         tuple[str, str | None, tuple[str, ...], str | None], tuple[str | None, str | None]
@@ -180,8 +233,7 @@ def discover_servers(
         config = _server(entry)
         key = (config.name, config.command, tuple(config.args), config.url)
         provenance = _provenance(entry)
-        if input_paths is not None:
-            _protect_source_paths(entry, input_paths)
+        _protect_source_paths(entry, input_paths)
         directory = extension_directory(getattr(entry, "provenance", None))
         if provenance[0] == "dxt" and directory is None:
             raise ValueError("DXT provenance must name a direct-child extension manifest")
@@ -256,12 +308,11 @@ def discover_servers(
                 else None,
             )
         )
-    if input_directories is not None:
-        roots = {directory.parent for directory in extensions.values()}
-        if dxt_dir is not None:
-            roots.add(dxt_dir)
-        for root in sorted(roots):
-            input_directories.extend([root, root.parent / "Claude Extensions Settings"])
+    roots = {directory.parent for directory in extensions.values()}
+    for root in sorted(roots):
+        settings = root.parent / "Claude Extensions Settings"
+        input_directories.extend([root, settings])
+        input_paths.extend(metadata_inputs(root, settings))
     return DiscoveryServers(
         resolved,
         notes,
