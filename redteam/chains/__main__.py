@@ -1,4 +1,4 @@
-"""Checkout-only, static chain exploration."""
+"""Checkout-only, static chain exploration with an opt-in sandboxed canary."""
 
 from __future__ import annotations
 
@@ -34,6 +34,12 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--config", type=Path, required=True)
     run.add_argument("--surfaces", type=Path, help="adjacent explicit name-to-surface filename JSON mapping")
     run.add_argument("--pins", type=Path, help="explicit pin directory (never read by default)")
+    run.add_argument(
+        "--reproduce", action="store_true", help="run the top supported canary under sandbox-exec"
+    )
+    run.add_argument(
+        "--allow-skip", action="store_true", help="return success when a requested canary is skipped"
+    )
     run.add_argument("--allow-incomplete", action="store_true", help="allow success with parse errors")
     run.add_argument("--json", type=Path, dest="json_path")
     run.add_argument("--md", type=Path, dest="md_path")
@@ -50,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         _validate_outputs(
             [options.json_path, options.md_path], [*input_paths, *additional_inputs], options.pins
         )
-        report = build_report(servers)
+        report = build_report(servers, reproduce=options.reproduce)
         markdown = to_markdown(report)
         for path, content in ((options.json_path, to_json(report)), (options.md_path, markdown)):
             if path is not None:
@@ -59,6 +65,12 @@ def main(argv: list[str] | None = None) -> int:
         print(markdown, end="")
         if report["analysis_incomplete"] and not options.allow_incomplete:
             return 1
+        reproduction = report["reproduction"]
+        if isinstance(reproduction, dict):
+            if reproduction.get("status") == "NOT_REPRODUCED":
+                return 1
+            if reproduction.get("status") == "SKIPPED" and not options.allow_skip:
+                return 3
     except AmbiguousInput as exc:
         print(f"chains failed: {exc}", file=sys.stderr)
         return 2

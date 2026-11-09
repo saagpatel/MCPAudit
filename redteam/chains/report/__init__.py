@@ -9,6 +9,7 @@ from dataclasses import asdict
 from redteam.chains.labeler import label_server
 from redteam.chains.pairs import ConfiguredServer, pair_servers
 from redteam.chains.rank import RankedChain, rank_chains
+from redteam.chains.reproduce import DEMONSTRATION, reproduce_git_clean_filter, reproduce_write_then_run
 
 
 def _source(server: ConfiguredServer) -> str:
@@ -56,7 +57,7 @@ def _chain(row: RankedChain, rank: int) -> dict[str, object]:
     }
 
 
-def build_report(servers: list[ConfiguredServer]) -> dict[str, object]:
+def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) -> dict[str, object]:
     ranked, dropped = rank_chains(pair_servers(servers))
     rows = [_chain(row, number) for number, row in enumerate(ranked, 1)]
     report: dict[str, object] = {
@@ -107,8 +108,33 @@ def build_report(servers: list[ConfiguredServer]) -> dict[str, object]:
             }
             for row in dropped
         ],
+        "reproduction": None,
         "discovery_notes": [],
     }
+    if reproduce:
+        reproducers = {
+            "git-clean-filter": reproduce_git_clean_filter,
+            "write-then-run": reproduce_write_then_run,
+        }
+        selected = next((row for row in rows if row["template"] in reproducers), None)
+        if selected is None:
+            report["reproduction"] = {
+                "status": "SKIPPED",
+                "reason": "no ranked chain has a registered reproducer",
+                "demonstration": DEMONSTRATION,
+            }
+        else:
+            report["reproduction"] = {
+                **asdict(reproducers[str(selected["template"])]()),
+                "rank": selected["rank"],
+                "template": selected["template"],
+                "provenance_flag": "MOCKED",
+                "selection_reason": (
+                    "top-ranked chain has a registered reproducer"
+                    if selected["rank"] == 1
+                    else "highest-ranked supported chain; higher-ranked templates have no reproducer"
+                ),
+            }
     return report
 
 
@@ -191,4 +217,34 @@ def to_markdown(report: dict[str, object]) -> str:
                 f"Surface {_cell(server['name'])}: {_cell(server['surface_source'])}; "
                 f"{_cell(server['provenance'])}."
             )
+    reproduction = report["reproduction"]
+    if isinstance(reproduction, dict):
+        lines.extend(["", f"Canary: {_cell(reproduction['status'])}."])
+        if reproduction.get("reason"):
+            lines.append(_cell(reproduction["reason"]))
+        if reproduction.get("selection_reason"):
+            lines.append(
+                f"Selected rank {_cell(reproduction['rank'])}, {_cell(reproduction['template'])}: "
+                f"{_cell(reproduction['selection_reason'])}."
+            )
+        lines.extend(["", _cell(reproduction["demonstration"])])
+        if "provenance_flag" in reproduction:
+            lines.append("MOCKED: equivalent server operations; execution requires the sandbox.")
+        for key in (
+            "marker_before",
+            "marker_after",
+            "index_has_bait",
+            "negative_controls",
+            "isolation_checks",
+            "teardown_confirmed",
+        ):
+            if key in reproduction:
+                lines.append(f"- {_cell(key)}: {_cell(reproduction[key])}")
+        if reproduction.get("steps"):
+            lines.extend(["", "| Canary step | Exit code | Timed out |", "| --- | --- | --- |"])
+            for step in _items(reproduction["steps"]):
+                if isinstance(step, dict):
+                    lines.append(
+                        f"| {_cell(step['name'])} | {_cell(step['exit_code'])} | {_cell(step['timed_out'])} |"
+                    )
     return "\n".join(lines) + "\n"
