@@ -7,20 +7,22 @@ payload is our fixed marker-and-cat script in a fresh repo.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
 import shlex
-import shutil
 import signal
 import stat
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 from typing import Literal
+
+from redteam.chains.reproduce.containment import CanaryFailure, PrivateCanary, prepare_parent
+
+_Failed = CanaryFailure
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 XCRUN = Path("/usr/bin/xcrun")
@@ -33,6 +35,7 @@ GIT_ROOTS = (
     Path("/opt/homebrew"),
 )
 PREFIX = "mcpaudit-chain-canary-"
+PROCESS_CLEANUP_TIMEOUT = 1.0
 DEMONSTRATION = (
     "Git filter activation via equivalent filesystem writes and git add operations on a canary; "
     "not an exploit against a live MCP server."
@@ -62,10 +65,6 @@ class ReproductionResult:
 
 
 class _Unavailable(Exception):
-    pass
-
-
-class _Failed(Exception):
     pass
 
 
@@ -113,21 +112,34 @@ def _is_xcrun_shim(path: Path) -> bool:
 
 def _run_resolution_command(command: list[str], *, cwd: Path) -> str:
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=cwd,
             env={"PATH": "/usr/bin:/bin"},
             stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        try:
+            try:
+                stdout, _ = process.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                _reap_timed_out(process)
+                raise _Unavailable("Git toolchain resolution timed out") from None
+        finally:
+            for pipe in (process.stdout, process.stderr):
+                if pipe is not None and not pipe.closed:
+                    pipe.close()
+    except (OSError, subprocess.SubprocessError) as exc:
         raise _Unavailable("Git toolchain could not be resolved") from exc
-    if completed.returncode != 0:
+    if process.returncode != 0:
         raise _Unavailable("Git toolchain could not be resolved")
-    return completed.stdout.strip()
+    return stdout.decode("utf-8", errors="strict").strip()
 
 
 def resolve_git_tool(*, cwd: Path) -> GitTool:
@@ -146,7 +158,7 @@ def resolve_git_tool(*, cwd: Path) -> GitTool:
         raise _Unavailable("resolved Git executable is unavailable")
     exec_text = _run_resolution_command([str(executable), "--exec-path"], cwd=cwd)
     exec_path = _allowed_real_path(Path(exec_text))
-    if not exec_path.is_dir():
+    if not exec_path.is_dir() or exec_path.name != "git-core":
         raise _Unavailable("Git helper directory is unavailable")
     return GitTool(executable, exec_path)
 
@@ -172,18 +184,26 @@ def resolve_sh_variant() -> Path | None:
 
 
 def sandbox_profile(root: Path, script: Path, git_tool: GitTool, sh_variant: Path | None = None) -> str:
-    """A deny-write/network/exec policy with narrowly scoped exceptions.
+    """Deny user-content reads, writes, network, and unlisted executables.
 
     Git and its helper directory are resolved and validated before entering
     the sandbox. JSON string escaping is also valid for Seatbelt literals.
     """
-    if not root.is_absolute() or root.resolve() != root or script.parent != root:
-        raise ValueError("sandbox paths must be resolved private canary paths")
+    validate_profile_paths(root, script, sh_variant)
+    if (
+        _allowed_real_path(git_tool.executable) != git_tool.executable
+        or _allowed_real_path(git_tool.exec_path) != git_tool.exec_path
+        or git_tool.exec_path.name != "git-core"
+        or not git_tool.executable.is_file()
+        or not git_tool.exec_path.is_dir()
+    ):
+        raise _Failed("sandbox Git paths are not a resolved narrow toolchain")
     quote = json.dumps
     variant_literal = f"(literal {quote(str(sh_variant))}) " if sh_variant is not None else ""
     return (
         "(version 1)\n(allow default)\n"
-        "(deny network*)\n(deny file-write*)\n"
+        + read_policy(root, (git_tool.executable, Path("/bin/cat")), git_tool.exec_path, sh_variant)
+        + "(deny network*)\n(deny file-write*)\n"
         f"(allow file-write* (subpath {quote(str(root))}) "
         '(literal "/dev/null") (literal "/dev/tty"))\n'
         "(deny process-exec)\n"
@@ -193,6 +213,44 @@ def sandbox_profile(root: Path, script: Path, git_tool: GitTool, sh_variant: Pat
         f"{variant_literal}"
         f'(literal "/bin/cat") (literal {quote(str(script))}))\n'
     )
+
+
+def read_policy(
+    root: Path, executables: tuple[Path, ...], helpers: Path | None, sh_variant: Path | None
+) -> str:
+    """Allow runtime libraries and canary data, never arbitrary user file contents."""
+    directories = [
+        root,
+        Path("/System/Library"),
+        Path("/usr/lib"),
+        Path("/Library/Apple/System/Library"),
+        Path("/private/var/db/dyld"),
+        Path("/usr/share/locale"),
+    ]
+    if helpers is not None:
+        directories.append(helpers)
+    files = [Path("/bin/sh"), Path("/dev/null"), Path("/dev/urandom"), *executables]
+    if sh_variant is not None:
+        files.append(sh_variant)
+    rules = [f"(subpath {json.dumps(str(path))})" for path in directories]
+    rules += [f"(literal {json.dumps(str(path))})" for path in files]
+    return "(deny file-read-data)\n(allow file-read-data " + " ".join(rules) + ")\n"
+
+
+def validate_profile_paths(root: Path, script: Path, sh_variant: Path | None) -> None:
+    if (
+        not root.is_absolute()
+        or root == Path("/")
+        or root.resolve() != root
+        or script.parent != root
+        or script.name != "canary.sh"
+        or script.is_symlink()
+    ):
+        raise ValueError("sandbox paths must be resolved private canary paths")
+    if sh_variant is not None and (
+        sh_variant.parent != Path("/bin") or sh_variant.name not in {"bash", "dash", "zsh", "sh"}
+    ):
+        raise ValueError("sandbox shell variant is outside approved paths")
 
 
 def canary_environment(root: Path) -> dict[str, str]:
@@ -207,6 +265,7 @@ def canary_environment(root: Path) -> dict[str, str]:
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_ATTR_NOSYSTEM": "1",
         "PATH": "/usr/bin:/bin",
+        "LC_ALL": "C",
     }
 
 
@@ -217,14 +276,18 @@ def _run_git(
     result: ReproductionResult,
     timeout: float,
     git_tool: GitTool,
+    *,
+    canary: PrivateCanary | None = None,
 ) -> str:
+    if canary is not None:
+        canary.verify()
     command = [
         str(SANDBOX_EXEC),
-        "-f",
-        str(root / "sandbox.sb"),
+        "-p",
+        sandbox_profile(root, root / "canary.sh", git_tool, resolve_sh_variant()),
         str(git_tool.executable),
         "-C",
-        str(root / "repo"),
+        "repo" if canary is not None else str(root / "repo"),
         "-c",
         "core.hooksPath=/dev/null",
         "-c",
@@ -237,15 +300,19 @@ def _run_git(
         "credential.helper=",
         *args,
     ]
-    with subprocess.Popen(
+    process = subprocess.Popen(
         command,
-        cwd=root,
+        cwd=root if canary is None else None,
+        preexec_fn=partial(os.fchdir, canary.fd) if canary is not None else None,
+        pass_fds=(canary.fd,) if canary is not None else (),
         env=canary_environment(root),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
-    ) as process:
+        umask=0o077,
+    )
+    try:
         try:
             stdout, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -254,9 +321,15 @@ def _run_git(
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass  # The process group already exited.
-            process.communicate()
-            result.steps.append(ReproductionStep(name, process.returncode, timed_out=True))
+            try:
+                _reap_timed_out(process)
+            finally:
+                result.steps.append(ReproductionStep(name, process.returncode, timed_out=True))
             raise _Failed(f"sandboxed Git timed out at {name} (exit code {process.returncode})") from None
+    finally:
+        for pipe in (process.stdout, process.stderr):
+            if pipe is not None and not pipe.closed:
+                pipe.close()
     result.steps.append(ReproductionStep(name, process.returncode))
     if _is_nested_apply_failure(process.returncode, stderr):
         raise _Unavailable("nested sandbox unavailable")
@@ -265,13 +338,36 @@ def _run_git(
     return stdout.decode("utf-8", errors="strict")
 
 
+def _reap_timed_out(process: subprocess.Popen[bytes]) -> None:
+    """Bound cleanup even if an escaped child retains an output pipe."""
+    try:
+        process.communicate(timeout=PROCESS_CLEANUP_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        if process.poll() is None:
+            process.kill()
+        for pipe in (process.stdout, process.stderr):
+            if pipe is not None:
+                pipe.close()
+        try:
+            process.wait(timeout=PROCESS_CLEANUP_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            raise _Failed("timed out and sandbox process could not be reaped") from None
+
+
 def _is_nested_apply_failure(returncode: int | None, stderr: bytes) -> bool:
     """Match sandbox-exec's own apply EPERM diagnostic, never ordinary denials."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     return returncode == 71 and lines == [b"sandbox-exec: sandbox_apply: Operation not permitted"]
 
 
-def _check_repo(root: Path, result: ReproductionResult, timeout: float, git_tool: GitTool) -> None:
+def _check_repo(
+    root: Path,
+    result: ReproductionResult,
+    timeout: float,
+    git_tool: GitTool,
+    *,
+    canary: PrivateCanary | None = None,
+) -> None:
     repo = root / "repo"
     git_dir = repo / ".git"
     if not git_dir.is_dir() or git_dir.is_symlink():
@@ -284,7 +380,13 @@ def _check_repo(root: Path, result: ReproductionResult, timeout: float, git_tool
     if (repo / ".gitmodules").exists():
         raise _Failed("unexpected submodules in canary")
     config = _run_git(
-        root, ["config", "--local", "--name-only", "--list"], "verify-config", result, timeout, git_tool
+        root,
+        ["config", "--local", "--name-only", "--list"],
+        "verify-config",
+        result,
+        timeout,
+        git_tool,
+        canary=canary,
     )
     allowed = {
         "core.repositoryformatversion",
@@ -301,26 +403,14 @@ def _check_repo(root: Path, result: ReproductionResult, timeout: float, git_tool
         ("--absolute-git-dir", git_dir),
         ("--git-common-dir", git_dir),
     ):
-        actual = _run_git(root, ["rev-parse", option], f"verify-{option[2:]}", result, timeout, git_tool)
+        actual = _run_git(
+            root, ["rev-parse", option], f"verify-{option[2:]}", result, timeout, git_tool, canary=canary
+        )
         candidate = Path(actual.strip())
         if not candidate.is_absolute():
             candidate = repo / candidate
         if candidate.resolve() != expected:
             raise _Failed("Git repository paths escaped the canary")
-
-
-def _non_git_snapshot(root: Path) -> dict[str, str]:
-    snapshot: dict[str, str] = {}
-    for path in sorted(root.rglob("*")):
-        relative = path.relative_to(root)
-        if relative.parts[:2] == ("repo", ".git"):
-            continue
-        info = path.lstat()
-        if stat.S_ISLNK(info.st_mode) or not (path.is_dir() or path.is_file()):
-            raise _Failed("unexpected non-regular canary entry")
-        digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else "directory"
-        snapshot[str(relative)] = f"{stat.S_IMODE(info.st_mode)}:{digest}"
-    return snapshot
 
 
 def _script(marker: Path) -> str:
@@ -335,18 +425,16 @@ def _case(
     git_tool: GitTool,
     sh_variant: Path | None,
 ) -> None:
-    root = Path(tempfile.mkdtemp(prefix=PREFIX, dir=parent))
+    canary = PrivateCanary(parent, PREFIX)
+    root = canary.root
     try:
-        # mkdtemp's 0700 is required, not merely assumed from the current umask.
+        # Private permissions are checked rather than assumed from the umask.
         if root.is_symlink() or root.resolve() != root or stat.S_IMODE(root.stat().st_mode) != 0o700:
             raise _Failed("temporary canary path is not private and resolved")
         for directory in ("repo", "home", "xdg", "tmp", "empty-template", "empty-hooks"):
-            (root / directory).mkdir(mode=0o700)
+            canary.mkdir(directory)
         script = root / "canary.sh"
-        marker = root / "marker"
-        (root / "sandbox.sb").write_text(
-            sandbox_profile(root, script, git_tool, sh_variant), encoding="utf-8"
-        )
+        canary.write("sandbox.sb", sandbox_profile(root, script, git_tool, sh_variant).encode())
         _run_git(
             root,
             [
@@ -360,46 +448,63 @@ def _case(
             result,
             timeout,
             git_tool,
+            canary=canary,
         )
-        _check_repo(root, result, timeout, git_tool)
+        _check_repo(root, result, timeout, git_tool, canary=canary)
+        canary.verify()
         result.isolation_checks[f"{control}:private-repo"] = True
         # Equivalent filesystem-server operations: literal synthetic writes only.
-        script.write_text(_script(marker), encoding="utf-8")
-        repo = root / "repo"
-        (repo / ".git" / "hooks").mkdir(mode=0o700)
+        canary.write("canary.sh", _script(Path("../marker")).encode())
+        canary.mkdir("repo/.git/hooks")
         if control != "no-filter-config":
-            # Git parses double quoted config values, then the shell parses the
-            # resulting command. Escape at both layers, including spaces in cwd.
-            clean = f"/bin/sh {shlex.quote(str(script))}"
-            (repo / ".git" / "config").write_text(
-                "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
-                f'[filter "canary"]\n\tclean = {json.dumps(clean)}\n\trequired = true\n',
-                encoding="utf-8",
+            # Relative paths keep the filter anchored to Git's pinned worktree.
+            clean = "/bin/sh ../canary.sh"
+            canary.write(
+                "repo/.git/config",
+                (
+                    "[core]\n\trepositoryformatversion = 0\n\tbare = false\n"
+                    f'[filter "canary"]\n\tclean = {json.dumps(clean)}\n\trequired = true\n'
+                ).encode(),
             )
         if control != "no-attributes":
-            (repo / ".gitattributes").write_text("bait.txt filter=canary\n", encoding="utf-8")
+            canary.write("repo/.gitattributes", b"bait.txt filter=canary\n")
         bait = b"Synthetic canary bait.\n"
-        (repo / "bait.txt").write_bytes(bait)
+        canary.write("repo/bait.txt", bait)
         result.steps.append(ReproductionStep(f"{control}:filesystem-writes", 0))
-        before = _non_git_snapshot(root)
-        marker_before = marker.exists()
+        before = canary.snapshot(exclude_git=True)
+        marker_before = "marker" in before
         if control == "filter":
             result.marker_before = marker_before
         if marker_before:
             raise _Failed("marker already existed before git add")
-        _run_git(root, ["add", "--", "bait.txt"], f"{control}:git-add", result, timeout, git_tool)
-        marker_after = marker.is_file() and not marker.is_symlink()
+        _run_git(
+            root,
+            ["add", "--", "bait.txt"],
+            f"{control}:git-add",
+            result,
+            timeout,
+            git_tool,
+            canary=canary,
+        )
+        after_add = canary.snapshot(exclude_git=True)
+        marker_after = after_add.get("marker", "").endswith(
+            ":e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
         if control == "filter":
             result.marker_after = marker_after
-        indexed = _run_git(root, ["show", ":bait.txt"], f"{control}:verify-index", result, timeout, git_tool)
+        if control == "filter" and not marker_after:
+            raise _Failed("clean filter did not create marker")
+        indexed = _run_git(
+            root, ["show", ":bait.txt"], f"{control}:verify-index", result, timeout, git_tool, canary=canary
+        )
         correct_blob = indexed == bait.decode()
         if control == "filter":
             result.index_has_bait = correct_blob
-        after = _non_git_snapshot(root)
+        after = canary.snapshot(exclude_git=True)
         expected = dict(before)
         if control == "filter" and marker_after:
             expected["marker"] = after["marker"]
-        unchanged = after == expected
+        unchanged = after_add == after == expected
         result.isolation_checks[f"{control}:only-marker-added"] = unchanged
         if not unchanged or not correct_blob:
             raise _Failed("unexpected canary filesystem or index change")
@@ -412,20 +517,11 @@ def _case(
                 raise _Failed("negative control created a marker")
     finally:
         # Never delete a caller-supplied repo, another canary, or a redirected path.
-        if (
-            root.parent != parent
-            or not root.name.startswith(PREFIX)
-            or root.is_symlink()
-            or root.resolve() != root
-        ):
-            result.teardown_confirmed = False
-            raise _Failed("refusing teardown of an unverified canary path")
-        shutil.rmtree(root)
-        gone = not root.exists()
-        result.isolation_checks[f"{control}:teardown"] = gone
-        result.teardown_confirmed = gone
-        if not gone:
-            raise _Failed("canary teardown did not complete")
+        result.teardown_confirmed = False
+        result.isolation_checks[f"{control}:teardown"] = False
+        canary.teardown()
+        result.isolation_checks[f"{control}:teardown"] = True
+        result.teardown_confirmed = True
 
 
 def reproduce_git_clean_filter(*, parent: Path | None = None, timeout: float = 10.0) -> ReproductionResult:
@@ -445,10 +541,7 @@ def reproduce_git_clean_filter(*, parent: Path | None = None, timeout: float = 1
         raise ValueError("timeout must be positive and at most 60 seconds per Git invocation")
     base = parent if parent is not None else Path("build/redteam/chains")
     try:
-        base.mkdir(parents=True, exist_ok=True)
-        if base.is_symlink() or base.absolute() != base.resolve():
-            raise _Failed("canary parent must not contain symlinks")
-        base = base.resolve()
+        base = prepare_parent(base)
         git_tool = resolve_git_tool(cwd=base)
         sh_variant = resolve_sh_variant()
         for control in ("filter", "no-filter-config", "no-attributes"):
@@ -458,7 +551,7 @@ def reproduce_git_clean_filter(*, parent: Path | None = None, timeout: float = 1
         result.status, result.reason = "SKIPPED", str(exc)
     except _Failed as exc:
         result.reason = str(exc)
-    except (OSError, UnicodeError) as exc:
+    except (OSError, UnicodeError, subprocess.SubprocessError) as exc:
         result.reason = f"canary operation failed ({type(exc).__name__})"
     return result
 

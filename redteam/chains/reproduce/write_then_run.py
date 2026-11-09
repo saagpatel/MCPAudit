@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shlex
-import shutil
 import signal
 import stat
 import subprocess
 import sys
-import tempfile
+from functools import partial
 from pathlib import Path
 
 from redteam.chains.reproduce import (
@@ -22,8 +20,11 @@ from redteam.chains.reproduce import (
     _is_nested_apply_failure,
     _Unavailable,
     canary_environment,
+    read_policy,
     resolve_sh_variant,
+    validate_profile_paths,
 )
+from redteam.chains.reproduce.containment import PrivateCanary, prepare_parent
 
 SANDBOX_EXEC = Path("/usr/bin/sandbox-exec")
 PROCESS_CLEANUP_TIMEOUT = 1.0
@@ -35,13 +36,13 @@ DEMONSTRATION = (
 
 def sandbox_profile(root: Path, script: Path, sh_variant: Path | None = None) -> str:
     """Allow only the shell and this canary script to execute."""
-    if not root.is_absolute() or root.resolve() != root or script.parent != root:
-        raise ValueError("sandbox paths must be resolved private canary paths")
+    validate_profile_paths(root, script, sh_variant)
     quote = json.dumps
     variant_literal = f"(literal {quote(str(sh_variant))}) " if sh_variant is not None else ""
     return (
         "(version 1)\n(allow default)\n"
-        "(deny network*)\n(deny file-write*)\n"
+        + read_policy(root, (), None, sh_variant)
+        + "(deny network*)\n(deny file-write*)\n"
         f"(allow file-write* (subpath {quote(str(root))}) "
         '(literal "/dev/null") (literal "/dev/tty"))\n'
         "(deny process-exec)\n"
@@ -53,28 +54,38 @@ def _payload(marker: Path) -> str:
     return f"set -eu\n: > {shlex.quote(str(marker))}\n"
 
 
-def _snapshot(root: Path) -> dict[str, str]:
-    snapshot: dict[str, str] = {}
-    for path in sorted(root.rglob("*")):
-        info = path.lstat()
-        if stat.S_ISLNK(info.st_mode) or not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
-            raise _Failed("unexpected canary entry")
-        value = "directory" if stat.S_ISDIR(info.st_mode) else hashlib.sha256(path.read_bytes()).hexdigest()
-        snapshot[str(path.relative_to(root))] = f"{stat.S_IMODE(info.st_mode)}:{value}"
-    return snapshot
-
-
-def _run_script(root: Path, script: Path, name: str, result: ReproductionResult, timeout: float) -> int:
-    command = [str(SANDBOX_EXEC), "-f", str(root / "sandbox.sb"), "/bin/sh", str(script)]
-    with subprocess.Popen(
+def _run_script(
+    root: Path,
+    script: Path,
+    name: str,
+    result: ReproductionResult,
+    timeout: float,
+    *,
+    missing_script: bool = False,
+    canary: PrivateCanary | None = None,
+) -> int:
+    if canary is not None:
+        canary.verify()
+    command = [
+        str(SANDBOX_EXEC),
+        "-p",
+        sandbox_profile(root, script, resolve_sh_variant()),
+        "/bin/sh",
+        script.name if canary is not None else str(script),
+    ]
+    process = subprocess.Popen(
         command,
-        cwd=root,
+        cwd=root if canary is None else None,
+        preexec_fn=partial(os.fchdir, canary.fd) if canary is not None else None,
+        pass_fds=(canary.fd,) if canary is not None else (),
         env=canary_environment(root),
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         start_new_session=True,
-    ) as process:
+        umask=0o077,
+    )
+    try:
         try:
             _, stderr = process.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -94,11 +105,22 @@ def _run_script(root: Path, script: Path, name: str, result: ReproductionResult,
                     process.wait(timeout=PROCESS_CLEANUP_TIMEOUT)
                 except subprocess.TimeoutExpired:
                     raise _Failed("timed out and sandbox process could not be reaped") from None
-            result.steps.append(ReproductionStep(name, process.returncode, timed_out=True))
+            finally:
+                result.steps.append(ReproductionStep(name, process.returncode, timed_out=True))
             raise _Failed(f"sandboxed script timed out at {name}") from None
+    finally:
+        for pipe in (process.stdout, process.stderr):
+            if pipe is not None and not pipe.closed:
+                pipe.close()
     result.steps.append(ReproductionStep(name, process.returncode))
     if _is_nested_apply_failure(process.returncode, stderr):
         raise _Unavailable("nested sandbox unavailable")
+    if missing_script and not (
+        process.returncode == 2
+        and os.fsencode(script.name if canary is not None else script) in stderr
+        and b"No such file or directory" in stderr
+    ):
+        raise _Failed("negative control did not establish a missing-script failure")
     return process.returncode
 
 
@@ -111,30 +133,33 @@ def _case(
     write_script: bool,
 ) -> None:
     control = "positive" if write_script else "no-script-written"
-    root = Path(tempfile.mkdtemp(prefix=PREFIX, dir=parent))
+    canary = PrivateCanary(parent, PREFIX)
+    root = canary.root
     try:
         if root.is_symlink() or root.resolve() != root or stat.S_IMODE(root.stat().st_mode) != 0o700:
             raise _Failed("temporary canary path is not private and resolved")
         for directory in ("home", "xdg", "tmp"):
-            (root / directory).mkdir(mode=0o700)
+            canary.mkdir(directory)
         script = root / "canary.sh"
-        marker = root / "marker"
-        (root / "sandbox.sb").write_text(sandbox_profile(root, script, sh_variant), encoding="utf-8")
-        marker_before = marker.exists()
+        canary.write("sandbox.sb", sandbox_profile(root, script, sh_variant).encode())
+        marker_before = "marker" in canary.snapshot()
         if marker_before:
             raise _Failed("marker already existed before script run")
         if write_script:
-            script.write_text(_payload(marker), encoding="utf-8")
-            script.chmod(0o600)
+            canary.write("canary.sh", _payload(Path("marker")).encode())
             result.steps.append(ReproductionStep("filesystem-write", 0))
             if not script.is_file() or script.is_symlink():
                 raise _Failed("written canary script is not a regular file")
         else:
             result.steps.append(ReproductionStep("negative:no-script-written", 0))
-        before = _snapshot(root)
-        exit_code = _run_script(root, script, "run:/bin/sh", result, timeout)
-        after = marker.is_file() and not marker.is_symlink()
-        after_snapshot = _snapshot(root)
+        before = canary.snapshot()
+        exit_code = _run_script(
+            root, script, "run:/bin/sh", result, timeout, missing_script=not write_script, canary=canary
+        )
+        after_snapshot = canary.snapshot()
+        after = after_snapshot.get("marker", "").endswith(
+            ":e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        )
         if write_script:
             expected = dict(before)
             if after:
@@ -154,20 +179,11 @@ def _case(
             if after or exit_code == 0:
                 raise _Failed("negative control unexpectedly ran")
     finally:
-        if (
-            root.parent != parent
-            or not root.name.startswith(PREFIX)
-            or root.is_symlink()
-            or root.resolve() != root
-        ):
-            result.teardown_confirmed = False
-            raise _Failed("refusing teardown of an unverified canary path")
-        shutil.rmtree(root)
-        gone = not root.exists()
-        result.isolation_checks[f"{control}:teardown"] = gone
-        result.teardown_confirmed = gone
-        if not gone:
-            raise _Failed("canary teardown did not complete")
+        result.teardown_confirmed = False
+        result.isolation_checks[f"{control}:teardown"] = False
+        canary.teardown()
+        result.isolation_checks[f"{control}:teardown"] = True
+        result.teardown_confirmed = True
 
 
 def reproduce_write_then_run(*, parent: Path | None = None, timeout: float = 10.0) -> ReproductionResult:
@@ -183,10 +199,7 @@ def reproduce_write_then_run(*, parent: Path | None = None, timeout: float = 10.
         raise ValueError("timeout must be positive and at most 60 seconds")
     base = parent if parent is not None else Path("build/redteam/chains")
     try:
-        base.mkdir(parents=True, exist_ok=True)
-        if base.is_symlink() or base.absolute() != base.resolve():
-            raise _Failed("canary parent must not contain symlinks")
-        base = base.resolve()
+        base = prepare_parent(base)
         sh_variant = resolve_sh_variant()
         _case(base, result, timeout, sh_variant, write_script=True)
         _case(base, result, timeout, sh_variant, write_script=False)
@@ -195,6 +208,6 @@ def reproduce_write_then_run(*, parent: Path | None = None, timeout: float = 10.
         result.status, result.reason = "SKIPPED", str(exc)
     except _Failed as exc:
         result.reason = str(exc)
-    except (OSError, UnicodeError) as exc:
+    except (OSError, UnicodeError, subprocess.SubprocessError) as exc:
         result.reason = f"canary operation failed ({type(exc).__name__})"
     return result
