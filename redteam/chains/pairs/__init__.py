@@ -10,7 +10,6 @@ from mcp_audit.api import parse_config as parse_mcp_config
 from mcp_audit.models import PinVerificationState, ServerConfig
 from mcp_audit.pinning import PinStore
 from redteam.catalog import catalog_surface, load_catalog
-from redteam.chains.dxt import manifest_surface
 from redteam.chains.labeler import ToolLabel, label_server
 from redteam.chains.templates import TEMPLATES, Template
 from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceTool
@@ -189,11 +188,9 @@ def resolve_configs(
     configs: list[ServerConfig],
     explicit_surfaces: dict[str, ServerSurface] | None = None,
     pins_dir: Path | None = None,
-    dxt_dir: Path | None = None,
-    extensions: dict[str, Path] | None = None,
     provenance: dict[str, tuple[str | None, str | None]] | None = None,
 ) -> list[ConfiguredServer]:
-    """Resolve explicit metadata, selected pins, DXT manifests, then catalog."""
+    """Resolve explicit metadata, selected pins, then catalog."""
     explicit = explicit_surfaces or {}
     catalog = load_catalog()
     result: list[ConfiguredServer] = []
@@ -230,13 +227,9 @@ def resolve_configs(
             if surface is not None:
                 source = "pin"
         if surface is None and not pin_withheld:
-            surface, dxt_roots, reason = manifest_surface(config, dxt_dir, (extensions or {}).get(name))
+            surface, reason = catalog_surface(config, catalog)
             if surface is not None:
-                source, roots = "dxt-manifest", dxt_roots
-            elif reason is None:
-                surface, reason = catalog_surface(config, catalog)
-                if surface is not None:
-                    source = "catalog"
+                source = "catalog"
         if surface is not None:
             surface = surface.model_copy(update={"server_name": name})
         provenance_source, provenance_location = (provenance or {}).get(name, (None, None))
@@ -250,7 +243,7 @@ def resolve_configs(
                 else (
                     "Matching pin baseline was withheld or lacked verifiable launch identity"
                     if pin_withheld
-                    else reason or "No explicit, pin, DXT manifest, or catalog surface"
+                    else reason or "No explicit, pin, or catalog surface"
                 ),
                 tuple(sorted(config.env_keys)),
                 source,
@@ -265,7 +258,6 @@ def load_config(
     path: Path,
     surfaces_file: Path | None = None,
     pins_dir: Path | None = None,
-    dxt_dir: Path | None = None,
 ) -> list[ConfiguredServer]:
     """Read an explicit JSON/Codex TOML config and optional explicit surfaces file."""
     explicit: dict[str, ServerSurface] = {}
@@ -294,7 +286,7 @@ def load_config(
             if target.resolve().parent != path.resolve().parent:
                 raise ValueError("surface must be a filename adjacent to config")
             explicit[name] = ServerSurface.load(target)
-    return resolve_configs(_read_configs(path), explicit, pins_dir, dxt_dir)
+    return resolve_configs(_read_configs(path), explicit, pins_dir)
 
 
 def pair_servers(

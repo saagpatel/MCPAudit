@@ -5,9 +5,7 @@ from __future__ import annotations
 import json
 import unicodedata
 from dataclasses import asdict
-from pathlib import Path
 
-from redteam.chains.discovery import DiscoveryServers
 from redteam.chains.labeler import label_server
 from redteam.chains.pairs import ConfiguredServer, pair_servers
 from redteam.chains.rank import RankedChain, rank_chains
@@ -78,14 +76,6 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
                 "reason": server.reason,
                 **(
                     {
-                        "roots": [_display_path(root) for root in server.roots],
-                        "roots_known": bool(server.roots),
-                    }
-                    if server.source == "dxt-manifest"
-                    else {}
-                ),
-                **(
-                    {
                         "provenance": (
                             "user-selected explicit metadata; current surface unverified"
                             if server.source == "explicit"
@@ -93,7 +83,7 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
                         ),
                         "unverified": True,
                     }
-                    if server.surface is not None and server.surface.source in {"catalog", "dxt-manifest"}
+                    if server.surface is not None and server.surface.source == "catalog"
                     else {}
                 ),
             }
@@ -118,9 +108,7 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
             for row in dropped
         ],
         "reproduction": None,
-        "discovery_notes": [_display_path(note) for note in servers.notes]
-        if isinstance(servers, DiscoveryServers)
-        else [],
+        "discovery_notes": [],
     }
     if reproduce:
         reproducers = {
@@ -147,12 +135,6 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
                 ),
             }
     return report
-
-
-def _display_path(text: str) -> str:
-    """Home-relative output without reading or resolving any configured root."""
-    home = str(Path.home())
-    return text.replace(home + "/", "~/").replace(home, "~") if home != "/" else text
 
 
 def to_json(report: dict[str, object]) -> str:
@@ -232,12 +214,6 @@ def to_markdown(report: dict[str, object]) -> str:
                 f"Surface {_cell(server['name'])}: {_cell(server['surface_source'])}; "
                 f"{_cell(server['provenance'])}."
             )
-        if "roots" in server:
-            roots = ", ".join(_cell(root) for root in _items(server["roots"])) or "unknown"
-            lines.append(f"DXT roots for {_cell(server['name'])}: {roots}.")
-    notes = _items(report.get("discovery_notes"))
-    if notes:
-        lines.extend(["", "Discovery notes:", *[f"- {_cell(note)}" for note in notes]])
     reproduction = report["reproduction"]
     if isinstance(reproduction, dict):
         lines.extend(["", f"Canary: {_cell(reproduction['status'])}."])

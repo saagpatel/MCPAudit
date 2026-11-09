@@ -21,7 +21,13 @@ UNAVAILABLE_CATALOG = {
 
 
 def load_catalog() -> dict[str, ServerSurface]:
-    return {key: ServerSurface.load(CATALOG / name) for key, name in sorted(CATALOG_FILES.items())}
+    catalog: dict[str, ServerSurface] = {}
+    for key, name in sorted(CATALOG_FILES.items()):
+        try:
+            catalog[key] = ServerSurface.load(CATALOG / name)
+        except FileNotFoundError:
+            continue
+    return catalog
 
 
 def catalog_surface(
