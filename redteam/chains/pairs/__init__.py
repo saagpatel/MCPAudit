@@ -3,12 +3,13 @@
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import TypeAdapter, ValidationError
 
 from mcp_audit.api import parse_config as parse_mcp_config
 from mcp_audit.discovery.base import ConfigParseError
-from mcp_audit.models import PinVerificationState, ServerConfig
+from mcp_audit.models import PinVerificationState, ServerConfig, TransportType
 from mcp_audit.pinning import PinStore
 from redteam.catalog import CATALOG, CATALOG_FILES, catalog_surface, load_catalog
 from redteam.chains.labeler import ToolLabel, label_server
@@ -85,8 +86,6 @@ def _read_configs(path: Path, errors: list[ConfigParseError]) -> list[ServerConf
 def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | None, bool]:
     """Return a launch-identity-matched usable pin surface and withheld state."""
     path = pins_dir / ".mcp-audit-pins.yaml"
-    if not path.is_file():
-        return None, False
     store = PinStore(
         path=path,
         signing_key=pins_dir / "signing-key.pem",
@@ -94,6 +93,10 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
         record_verification=False,
     )
     if store.read_error is not None:
+        return None, True
+    # Verification also checks persisted signing expectations and the manifest
+    # for names that no longer occur in the pin file (or a missing pin file).
+    if not store.baseline_trusted(config.name):
         return None, True
     identity_fields = ("command", "args", "url", "transport", "env_keys", "headers_keys")
     candidate_names = sorted(store.pinned_servers())
@@ -105,15 +108,15 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
             PinVerificationState.VERIFIED,
             PinVerificationState.RETIRED_KEY,
         }:
-            if name == config.name:
-                withheld_match = True
+            # A failed signature cannot establish even an alias's identity.
+            # Do not use editable launch fields to rule out a matching pin.
+            withheld_match = True
             continue
         # A None snapshot cannot establish launch identity and therefore cannot
         # supply tools; report UNKNOWN rather than trusting a same-name catalog row.
         baseline_config = store.baseline_config(name)
         if baseline_config is None:
-            if name == config.name:
-                withheld_match = True
+            withheld_match = True
             continue
         current = {
             "command": config.command,
@@ -124,6 +127,8 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
             "headers_keys": sorted(config.headers_keys),
         }
         if any(baseline_config.get(field) != current[field] for field in identity_fields):
+            if name == config.name:
+                withheld_match = True
             continue
         tools = store.baseline_tools(name)
         if not tools:
@@ -165,20 +170,50 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
     return None, withheld_match
 
 
+def _url_identity(url: str | None) -> tuple[str, str, int, str] | None:
+    """Compare endpoint identity without retaining credentials, query or fragment."""
+    if not url:
+        return None
+    try:
+        parsed = urlsplit(url)
+        scheme = parsed.scheme.lower()
+        host = parsed.hostname
+        port = parsed.port
+    except ValueError:
+        return None
+    if scheme not in {"http", "https"} or not host:
+        return None
+    return (
+        scheme,
+        host.lower(),
+        port if port is not None else (443 if scheme == "https" else 80),
+        (parsed.path or "/"),
+    )
+
+
 def _explicit_surface_matches(surface: ServerSurface, name: str, config: ServerConfig) -> bool:
-    """Require the mapped name and a fully declared matching launch identity."""
-    if surface.server_name != name:
+    """Require the mapped name and the identity fields for its transport."""
+    declared = surface.config
+    if (
+        surface.server_name != name
+        or declared.transport != config.transport.value
+        or declared.env_keys != sorted(config.env_keys)
+    ):
         return False
-    configured: dict[str, object] = {
-        "command": config.command,
-        "args": list(config.args),
-        "transport": config.transport.value,
-        "url": config.url,
-        "env_keys": sorted(config.env_keys),
-    }
-    if not surface.config.command or not {"command", "args"} <= surface.config.model_fields_set:
-        return False
-    return all(getattr(surface.config, field) == configured[field] for field in configured)
+    if config.transport == TransportType.STDIO:
+        return (
+            bool(declared.command)
+            and {"command", "args"} <= declared.model_fields_set
+            and declared.command == config.command
+            and declared.args == config.args
+            and declared.url == config.url
+        )
+    endpoint = _url_identity(declared.url)
+    return (
+        {"transport", "url"} <= declared.model_fields_set
+        and endpoint is not None
+        and endpoint == _url_identity(config.url)
+    )
 
 
 def resolve_configs(
@@ -219,11 +254,16 @@ def resolve_configs(
             if mapped_surface is not None and surface is None
             else None
         )
-        if surface is None and pins_dir is not None:
+        if mapped_surface is None and pins_dir is not None:
             surface, pin_withheld = _pin_surface(pins_dir, config)
             if surface is not None:
                 source = "pin"
-        if surface is None and not pin_withheld:
+        if (
+            mapped_surface is None
+            and surface is None
+            and not pin_withheld
+            and config.transport == TransportType.STDIO
+        ):
             surface, catalog_reason = catalog_surface(config, catalog)
             reason = "; ".join(part for part in (reason, catalog_reason) if part) or None
             if surface is not None:
