@@ -39,6 +39,9 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument(
         "--reproduce", action="store_true", help="run the top supported canary under sandbox-exec"
     )
+    run.add_argument(
+        "--allow-skip", action="store_true", help="return success when a requested canary is skipped"
+    )
     run.add_argument("--json", type=Path, dest="json_path")
     run.add_argument("--md", type=Path, dest="md_path")
     options = parser.parse_args(argv)
@@ -79,8 +82,11 @@ def main(argv: list[str] | None = None) -> int:
                 path.write_text(content, encoding="utf-8")
         print(markdown, end="")
         reproduction = report["reproduction"]
-        if isinstance(reproduction, dict) and reproduction.get("status") == "NOT_REPRODUCED":
-            return 1
+        if isinstance(reproduction, dict):
+            if reproduction.get("status") == "NOT_REPRODUCED":
+                return 1
+            if reproduction.get("status") == "SKIPPED" and not options.allow_skip:
+                return 3
     except ImportError as exc:
         from redteam.chains.discovery import ShadowImportError
 

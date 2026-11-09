@@ -1,16 +1,36 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from redteam.chains.__main__ import main
-from redteam.chains.pairs import ConfiguredServer, load_config
+from redteam.chains.pairs import ConfiguredServer, load_config, pair_servers
 from redteam.chains.report import build_report, to_json, to_markdown
 from redteam.chains.reproduce import ReproductionResult
+from redteam.surface import ServerSurface, SurfaceTool
 
 FIXTURES = Path("redteam/fixtures/servers/configs")
+
+
+def test_explicit_provenance_cannot_leak_contents_or_claim_verification() -> None:
+    server = ConfiguredServer(
+        "synthetic",
+        ServerSurface(
+            server_name="synthetic",
+            source="catalog",
+            tools=[SurfaceTool(name="write_file")],
+            provenance="synthetic-private-file-contents",
+            unverified=False,
+        ),
+        source="explicit",
+    )
+    report = build_report([server])
+    encoded = to_json(report)
+    assert "synthetic-private-file-contents" not in encoded + to_markdown(report)
+    assert json.loads(encoded)["servers"][0]["unverified"] is True
 
 
 def test_report_is_stable_and_metadata_only(tmp_path: Path) -> None:
@@ -99,6 +119,37 @@ def test_only_top_supported_chain_reproduced(monkeypatch: pytest.MonkeyPatch) ->
     assert "not an exploit against a live MCP server" in to_markdown(report)
 
 
+def test_reproduction_identifies_supported_chain_below_unsupported_top(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chains = pair_servers(load_config(FIXTURES / "git-plus-filesystem.json"))
+    supported = next(chain for chain in chains if chain.template.name == "git-clean-filter")
+    unsupported = next(chain for chain in chains if chain.template.name == "git-hook")
+    supported = replace(supported, template=replace(supported.template, automaticity="user_action"))
+    unsupported = replace(
+        unsupported,
+        template=replace(unsupported.template, name="unregistered-high-rank", automaticity="automatic"),
+    )
+    monkeypatch.setattr("redteam.chains.report.pair_servers", lambda _servers: [supported, unsupported])
+    monkeypatch.setattr(
+        "redteam.chains.report.reproduce_git_clean_filter",
+        lambda: ReproductionResult("REPRODUCED", teardown_confirmed=True),
+    )
+
+    report = build_report(load_config(FIXTURES / "git-plus-filesystem.json"), reproduce=True)
+    reproduction = report["reproduction"]
+    assert isinstance(reproduction, dict)
+    ranked = report["ranked"]
+    assert isinstance(ranked, list) and ranked and isinstance(ranked[0], dict)
+    assert ranked[0]["template"] == "unregistered-high-rank"
+    assert reproduction["status"] == "REPRODUCED"
+    assert reproduction["rank"] == 2
+    assert reproduction["template"] == "git-clean-filter"
+    markdown = to_markdown(report)
+    assert "Selected rank 2, git-clean-filter" in markdown
+    assert "highest-ranked supported chain" in markdown
+
+
 def test_no_supported_chain_skips_without_running_canary(monkeypatch: pytest.MonkeyPatch) -> None:
     def forbidden() -> None:
         pytest.fail("no canary should run without a supported ranked chain")
@@ -113,6 +164,18 @@ def test_no_supported_chain_skips_without_running_canary(monkeypatch: pytest.Mon
             "not an exploit against a live MCP server."
         ),
     }
+
+
+def test_unknown_tool_label_is_reported_as_unranked_candidate() -> None:
+    from redteam.surface import ServerSurface, SurfaceTool
+
+    server = ConfiguredServer(
+        "unknown-tool",
+        ServerSurface(server_name="unknown-tool", source="fixture", tools=[SurfaceTool(name="mystery")]),
+    )
+    report = build_report([server])
+    assert report["unknown_labels"] == [{"server": "unknown-tool", "tool": "mystery"}]
+    assert "possible chains were not ranked" in to_markdown(report)
 
 
 def test_cli_does_not_echo_parser_secrets(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
@@ -132,6 +195,20 @@ def test_cli_returns_failure_for_failed_canary(
     )
     assert main(["run", "--config", str(FIXTURES / "git-plus-filesystem.json"), "--reproduce"]) == 1
     assert "NOT_REPRODUCED" in capsys.readouterr().out
+
+
+def test_cli_skipped_canary_has_distinct_failure_and_allow_skip(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(
+        "redteam.chains.report.reproduce_git_clean_filter",
+        lambda: ReproductionResult("SKIPPED", "nested sandbox unavailable"),
+    )
+    args = ["run", "--config", str(FIXTURES / "git-plus-filesystem.json"), "--reproduce"]
+    assert main(args) == 3
+    assert "SKIPPED" in capsys.readouterr().out
+    assert main([*args, "--allow-skip"]) == 0
+    assert "SKIPPED" in capsys.readouterr().out
 
 
 def test_markdown_escapes_separators_and_strips_terminal_controls() -> None:

@@ -8,6 +8,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from redteam.chains.discovery import DiscoveryServers
+from redteam.chains.labeler import label_server
 from redteam.chains.pairs import ConfiguredServer, pair_servers
 from redteam.chains.rank import RankedChain, rank_chains
 from redteam.chains.reproduce import DEMONSTRATION, reproduce_git_clean_filter, reproduce_write_then_run
@@ -84,7 +85,14 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
                     else {}
                 ),
                 **(
-                    {"provenance": server.surface.provenance, "unverified": server.surface.unverified}
+                    {
+                        "provenance": (
+                            "user-selected explicit metadata; current surface unverified"
+                            if server.source == "explicit"
+                            else server.surface.provenance
+                        ),
+                        "unverified": True,
+                    }
                     if server.surface is not None and server.surface.source in {"catalog", "dxt-manifest"}
                     else {}
                 ),
@@ -93,6 +101,13 @@ def build_report(servers: list[ConfiguredServer], *, reproduce: bool = False) ->
         ],
         "ranked": rows,
         "unknown_surfaces": sorted(server.name for server in servers if server.surface is None),
+        "unknown_labels": [
+            {"server": server.name, "tool": label.tool}
+            for server in sorted(servers, key=lambda item: item.name)
+            if server.surface is not None
+            for label in label_server(server.surface)
+            if label.tag == "unknown"
+        ],
         "dropped": [
             {
                 "template": row.chain.template.name,
@@ -198,6 +213,12 @@ def to_markdown(report: dict[str, object]) -> str:
         )
     unknown = ", ".join(_cell(name) for name in _items(report["unknown_surfaces"]))
     lines.extend(["", f"UNKNOWN surfaces: {unknown or 'none'}."])
+    unknown_labels = _items(report.get("unknown_labels"))
+    if unknown_labels:
+        lines.extend(["", "UNKNOWN tool labels; possible chains were not ranked:"])
+        for item in unknown_labels:
+            if isinstance(item, dict):
+                lines.append(f"- {_cell(item.get('server'))}.{_cell(item.get('tool'))}")
     for server in _items(report["servers"]):
         if not isinstance(server, dict):
             continue
