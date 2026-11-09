@@ -2,8 +2,9 @@
 
 import tomllib
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 from pydantic import TypeAdapter, ValidationError
 
@@ -14,7 +15,7 @@ from mcp_audit.pinning import PinStore
 from redteam.catalog import CATALOG, CATALOG_FILES, catalog_surface, load_catalog
 from redteam.chains.labeler import ToolLabel, label_server
 from redteam.chains.templates import TEMPLATES, Template
-from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceTool
+from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceConfig, SurfaceTool
 
 
 class AmbiguousInput(ValueError):
@@ -121,7 +122,7 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
     # for names that no longer occur in the pin file (or a missing pin file).
     if not store.baseline_trusted(config.name):
         return None, True
-    identity_fields = ("command", "args", "url", "transport", "env_keys", "headers_keys")
+    identity_fields = ("command", "args", "transport", "env_keys", "headers_keys")
     candidate_names = sorted(store.pinned_servers())
     withheld_match = False
     matches: list[ServerSurface] = []
@@ -137,19 +138,28 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
             continue
         # A None snapshot cannot establish launch identity and therefore cannot
         # supply tools; report UNKNOWN rather than trusting a same-name catalog row.
-        baseline_config = store.baseline_config(name)
+        baseline_config: dict[str, object] | None = store.baseline_config(name)
         if baseline_config is None:
             withheld_match = True
             continue
         current = {
             "command": config.command,
             "args": list(config.args),
-            "url": config.url,
             "transport": config.transport.value,
             "env_keys": sorted(config.env_keys),
             "headers_keys": sorted(config.headers_keys),
         }
-        if any(baseline_config.get(field) != current[field] for field in identity_fields):
+        baseline_url = baseline_config.get("url")
+        if config.transport == TransportType.STDIO:
+            url_matches = baseline_url == config.url
+        else:
+            # A redacted snapshot has no private value left to compare. Never
+            # treat its placeholder as evidence of a credential/query match.
+            endpoint = (
+                _url_identity(baseline_url, pin_snapshot=True) if isinstance(baseline_url, str) else None
+            )
+            url_matches = endpoint is not None and endpoint == _url_identity(config.url)
+        if not url_matches or any(baseline_config.get(field) != current[field] for field in identity_fields):
             if name == config.name:
                 withheld_match = True
             continue
@@ -193,16 +203,35 @@ def _pin_surface(pins_dir: Path, config: ServerConfig) -> tuple[ServerSurface | 
     return None, withheld_match
 
 
-def _url_identity(url: str | None) -> tuple[str, str, int, str] | None:
-    """Compare endpoint identity without retaining credentials, query or fragment."""
-    if not url:
+def _url_identity(
+    url: str | None, *, pin_snapshot: bool = False
+) -> tuple[str, str, int, str, tuple[tuple[str, str], ...]] | None:
+    """Private HTTP identity; never serialize this comparison key.
+
+    Scheme/host are case-insensitive and absent ports use the scheme default.
+    Empty path means `/`; other paths remain exact (case, escapes, dot segments,
+    repeated and trailing slashes). Fragments and userinfo are not routing
+    identity. Form-decoded query pairs compare as a multiset, preserving blanks,
+    duplicates and key/value case. Hash every value, including credentials.
+    Pin snapshots cannot establish identity from redacted routing fields.
+    Reject whitespace/control characters rather than letting urlsplit strip them.
+    """
+    if not url or any(ord(char) <= 0x20 or ord(char) == 0x7F for char in url):
         return None
     try:
         parsed = urlsplit(url)
         scheme = parsed.scheme.lower()
         host = parsed.hostname
         port = parsed.port
-    except ValueError:
+        if pin_snapshot and "<redacted>" in unquote(parsed.path + "?" + parsed.query):
+            return None
+        query = tuple(
+            sorted(
+                (key, sha256(value.encode("utf-8")).hexdigest())
+                for key, value in parse_qsl(parsed.query, keep_blank_values=True, errors="strict")
+            )
+        )
+    except (ValueError, UnicodeError):
         return None
     if scheme not in {"http", "https"} or not host:
         return None
@@ -211,6 +240,7 @@ def _url_identity(url: str | None) -> tuple[str, str, int, str] | None:
         host.lower(),
         port if port is not None else (443 if scheme == "https" else 80),
         (parsed.path or "/"),
+        query,
     )
 
 
@@ -292,7 +322,20 @@ def resolve_configs(
             if surface is not None:
                 source = "catalog"
         if surface is not None:
-            surface = surface.model_copy(update={"server_name": name})
+            # All sources must expose the same verified launch identity to the
+            # labeler, even when the configured name is an arbitrary alias.
+            surface = surface.model_copy(
+                update={
+                    "server_name": name,
+                    "config": SurfaceConfig(
+                        command=config.command,
+                        args=list(config.args),
+                        transport=config.transport.value,
+                        url=config.url,
+                        env_keys=sorted(config.env_keys),
+                    ),
+                }
+            )
         provenance_source, provenance_location = (provenance or {}).get(name, (None, None))
         result.append(
             ConfiguredServer(

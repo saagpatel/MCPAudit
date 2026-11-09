@@ -64,7 +64,11 @@ def test_report_is_stable_and_metadata_only(tmp_path: Path) -> None:
     assert "input_schema" not in encoded
     assert "description" not in encoded
     assert "git-clean-filter" in to_markdown(report)
-    assert "catalog (unversioned/unverified)" in encoded
+    # Resolved catalog surfaces now retain the configured launch command. The
+    # report's command-based source label changes; catalog provenance still
+    # explicitly states that these historical snapshots are unversioned.
+    assert "catalog (versioned or local declared metadata; unverified)" in encoded
+    assert "not a verified current surface; unversioned" in encoded
 
 
 def test_cli_writes_both_reports(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

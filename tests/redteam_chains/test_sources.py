@@ -9,7 +9,9 @@ from mcp_audit.api import parse_config
 from mcp_audit.models import ClientType, ServerConfig, ToolInfo, TransportType
 from mcp_audit.pin_signing import generate_keypair
 from mcp_audit.pinning import PinStore
-from redteam.chains.pairs import load_config, resolve_configs
+from redteam.chains.labeler import label_server
+from redteam.chains.pairs import load_config, pair_servers, resolve_configs
+from redteam.chains.report import build_report, to_json, to_markdown
 from redteam.surface import ServerSurface, SurfaceConfig, SurfaceTool
 
 
@@ -52,6 +54,11 @@ def test_codex_toml_uses_mcp_parser_and_keeps_only_environment_key_names(tmp_pat
     assert server.source == "catalog"
     assert server.env_keys == ("TOKEN",)
     assert server.surface is not None
+    assert server.surface.config == SurfaceConfig(
+        command="npx",
+        args=_server_config().args,
+        env_keys=["TOKEN"],
+    )
     assert "synthetic-secret-value" not in repr(server)
 
 
@@ -239,6 +246,284 @@ def _signed_store(tmp_path: Path) -> PinStore:
     )
 
 
+@pytest.mark.parametrize("source", ["pin", "explicit", "catalog"])
+def test_aliased_build_surface_keeps_launch_identity_and_forms_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    build = _server_config().model_copy(
+        update={"name": "build-tools", "args": ["-y", "xcodebuildmcp@2.6.2"], "env_keys": []}
+    )
+    metadata = ServerSurface(
+        server_name=build.name,
+        config=SurfaceConfig(command=build.command, args=build.args),
+        source="fixture",
+        tools=[SurfaceTool(name="build_project", description="Build the selected project.")],
+        provenance="MOCKED: synthetic build metadata; no fixture or server executed",
+    )
+    explicit: dict[str, ServerSurface] = {}
+    pins_dir: Path | None = None
+    if source == "pin":
+        _signed_store(tmp_path).pin_server("historical-build", metadata.to_tools(), build)
+        pins_dir = tmp_path
+    elif source == "explicit":
+        explicit[build.name] = metadata
+    else:
+        # The production catalog deliberately has no XcodeBuildMCP snapshot.
+        # Exercise catalog resolution using inert, explicitly MOCKED metadata.
+        from redteam.catalog import load_catalog
+
+        catalog = load_catalog()
+        catalog["npm:xcodebuildmcp@2.6.2"] = metadata.model_copy(update={"source": "catalog"})
+        monkeypatch.setattr("redteam.chains.pairs.load_catalog", lambda: catalog)
+
+    servers = resolve_configs([_server_config(), build], explicit, pins_dir=pins_dir)
+    executor = next(server for server in servers if server.name == build.name)
+    assert executor.source == source
+    assert executor.surface is not None
+    assert executor.surface.config == SurfaceConfig(command=build.command, args=build.args)
+    assert ("build_project", "runs_build") in {
+        (label.tool, label.tag) for label in label_server(executor.surface)
+    }
+    chains = [chain for chain in pair_servers(servers) if chain.template.name == "write-then-build"]
+    assert chains
+    assert all(chain.writer.name == "filesystem" and chain.executor.name == "build-tools" for chain in chains)
+    assert all(chain.satisfies_template() for chain in chains)
+
+
+@pytest.mark.parametrize("source", ["explicit", "pin"])
+@pytest.mark.parametrize("transport", [TransportType.HTTP, TransportType.SSE])
+@pytest.mark.parametrize(
+    ("configured_url", "declared_url", "matches"),
+    [
+        pytest.param("https://example.invalid/mcp", "HTTPS://EXAMPLE.INVALID/mcp", True, id="case"),
+        pytest.param(
+            "https://[2001:db8::abcd]/mcp",
+            "https://[2001:DB8::ABCD]:443/mcp",
+            True,
+            id="ipv6-case",
+        ),
+        pytest.param("https://example.invalid/mcp", "http://example.invalid/mcp", False, id="scheme"),
+        pytest.param("https://example.invalid/mcp", "https://other.invalid/mcp", False, id="host"),
+        pytest.param(
+            "https://example.invalid/mcp",
+            "https://example.invalid./mcp",
+            False,
+            id="host-trailing-dot",
+        ),
+        pytest.param("https://example.invalid/mcp", "https://example.invalid:443/mcp", True, id="https-port"),
+        pytest.param("http://example.invalid/mcp", "http://example.invalid:80/mcp", True, id="http-port"),
+        pytest.param("https://example.invalid/mcp", "https://example.invalid:80/mcp", False, id="wrong-port"),
+        pytest.param("https://example.invalid:8443/mcp", "https://example.invalid:8443/mcp", True, id="port"),
+        pytest.param("https://example.invalid/mcp", "https://example.invalid:bad/mcp", False, id="bad-port"),
+        pytest.param(
+            "https://example.invalid/mcp", "https://example.invalid:65536/mcp", False, id="port-range"
+        ),
+        pytest.param("https://example.invalid", "https://example.invalid/", True, id="empty-path"),
+        pytest.param(
+            "https://example.invalid/mcp", "https://example.invalid/mcp/", False, id="trailing-slash"
+        ),
+        pytest.param("https://example.invalid/mcp", "https://example.invalid/MCP", False, id="path-case"),
+        pytest.param(
+            "https://example.invalid/mcp", "https://example.invalid/a/../mcp", False, id="dot-segment"
+        ),
+        pytest.param("https://example.invalid/mcp", "https://example.invalid//mcp", False, id="double-slash"),
+        pytest.param("https://example.invalid/mcp", "https://example.invalid/%6dcp", False, id="path-escape"),
+        pytest.param(
+            "https://example.invalid/a%2fb", "https://example.invalid/a%2Fb", False, id="escape-case"
+        ),
+        pytest.param(
+            "https://example.invalid/mcp#one", "https://example.invalid/mcp#two", True, id="fragment"
+        ),
+        pytest.param("https://example.invalid/mcp", "/mcp", False, id="relative"),
+        pytest.param(
+            "https://example.invalid/mcp",
+            " https://example.invalid/mcp",
+            False,
+            id="leading-space",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp",
+            "https://synthetic:private@example.invalid/mcp",
+            True,
+            id="userinfo",
+        ),
+        pytest.param("https://example.invalid/mcp", None, False, id="missing"),
+        pytest.param(
+            "https://example.invalid/mcp?server=filesystem",
+            "https://example.invalid/mcp?server=shell",
+            False,
+            id="routing-query",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=filesystem&mode=read",
+            "https://example.invalid/mcp?mode=read&server=filesystem",
+            True,
+            id="query-order",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=one&server=two&server=one",
+            "https://example.invalid/mcp?server=two&server=one&server=one",
+            True,
+            id="duplicate-order",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=one&server=one",
+            "https://example.invalid/mcp?server=one",
+            False,
+            id="duplicate-count",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=one",
+            "https://example.invalid/mcp?server=ONE",
+            False,
+            id="query-value-case",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=one",
+            "https://example.invalid/mcp?Server=one",
+            False,
+            id="query-key-case",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=",
+            "https://example.invalid/mcp",
+            False,
+            id="blank-present",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server",
+            "https://example.invalid/mcp?server=",
+            True,
+            id="blank-equal",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=file%73ystem",
+            "https://example.invalid/mcp?server=filesystem",
+            True,
+            id="query-decoding",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=one+two",
+            "https://example.invalid/mcp?server=one%20two",
+            True,
+            id="query-form-space",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=one",
+            "https://example.invalid/mcp?server=%FF",
+            False,
+            id="query-invalid-utf8",
+        ),
+        pytest.param(
+            "https://example.invalid/mcp?server=onetwo",
+            "https://example.invalid/mcp?server=one\ntwo",
+            False,
+            id="query-control-character",
+        ),
+    ],
+)
+def test_endpoint_identity_rules_across_remote_sources(
+    tmp_path: Path,
+    source: str,
+    transport: TransportType,
+    configured_url: str,
+    declared_url: str | None,
+    matches: bool,
+) -> None:
+    config = ServerConfig(
+        name="remote",
+        client=ClientType.CLAUDE_CODE,
+        config_path="synthetic.json",
+        transport=transport,
+        url=configured_url,
+    )
+    metadata = ServerSurface(
+        server_name=config.name,
+        source="fixture",
+        config=SurfaceConfig(transport=transport.value, url=declared_url),
+        tools=[SurfaceTool(name="explicit_tool")],
+    )
+    if source == "pin":
+        _signed_store(tmp_path).pin_server(
+            config.name, metadata.to_tools(), config.model_copy(update={"url": declared_url})
+        )
+        server = resolve_configs([config], pins_dir=tmp_path)[0]
+    else:
+        server = resolve_configs([config], {config.name: metadata})[0]
+
+    # PinStore replaces *all* query values, including routing and blank values,
+    # with a placeholder. Unlike explicit metadata, it cannot prove equality.
+    expected_known = matches and (source != "pin" or "?" not in configured_url)
+    assert server.tool_surface == ("KNOWN" if expected_known else "UNKNOWN")
+    assert server.source == (source if expected_known else "unknown")
+    if expected_known:
+        assert server.surface is not None
+        assert server.surface.config.transport == transport.value
+        assert server.surface.config.url == configured_url
+    else:
+        assert server.reason is not None
+        assert configured_url not in server.reason
+        assert declared_url is None or declared_url not in server.reason
+
+
+@pytest.mark.parametrize("source", ["explicit", "pin"])
+@pytest.mark.parametrize("matches", [True, False])
+@pytest.mark.parametrize("key", ["server", "token", "api_key", "secret", "password", "auth", "sig"])
+def test_query_comparison_never_emits_values_in_reports(
+    tmp_path: Path, source: str, matches: bool, key: str
+) -> None:
+    value = "synthetic-private-query-value"
+    other = value if matches else "synthetic-other-query-value"
+    config = ServerConfig(
+        name="remote",
+        client=ClientType.CLAUDE_CODE,
+        config_path="synthetic.json",
+        transport=TransportType.HTTP,
+        url=f"https://example.invalid/mcp?{key}={value}&mode=private-mode",
+    )
+    surface = ServerSurface(
+        server_name=config.name,
+        source="fixture",
+        config=SurfaceConfig(
+            transport="http", url=f"https://example.invalid/mcp?mode=private-mode&{key}={other}"
+        ),
+        tools=[SurfaceTool(name="build_project")],
+    )
+    if source == "pin":
+        _signed_store(tmp_path).pin_server(
+            config.name, surface.to_tools(), config.model_copy(update={"url": surface.config.url})
+        )
+        servers = resolve_configs([config], pins_dir=tmp_path)
+        # PinStore redacts every query value; none can establish identity.
+        expected_known = False
+    else:
+        servers = resolve_configs([config], {config.name: surface})
+        expected_known = matches
+    assert servers[0].tool_surface == ("KNOWN" if expected_known else "UNKNOWN")
+    report = build_report(servers)
+    output = to_json(report) + to_markdown(report)
+    for private in (value, other, "private-mode"):
+        assert private not in output
+
+
+@pytest.mark.parametrize("query", ["server=<redacted>", "token=%3Credacted%3E"])
+def test_pin_redaction_placeholder_cannot_match_a_literal_config_value(tmp_path: Path, query: str) -> None:
+    config = ServerConfig(
+        name="remote",
+        client=ClientType.CLAUDE_CODE,
+        config_path="synthetic.json",
+        transport=TransportType.HTTP,
+        url=f"https://example.invalid/mcp?{query}",
+    )
+    _signed_store(tmp_path).pin_server(config.name, [ToolInfo(name="pinned_tool")], config)
+
+    resolved = resolve_configs([config], pins_dir=tmp_path)[0]
+
+    assert resolved.tool_surface == "UNKNOWN"
+    assert resolved.reason is not None and "withheld" in resolved.reason
+    assert "redacted" not in resolved.reason
+
+
 @pytest.mark.parametrize(
     "damage", ["deleted-entry", "deleted-file", "tampered-manifest", "missing-manifest", "bad-signature"]
 )
@@ -346,8 +631,9 @@ def test_explicit_identity_failure_does_not_fall_back_to_matching_pin(tmp_path: 
 @pytest.mark.parametrize(
     ("declared_url", "matches"),
     [
-        ("https://example.invalid/mcp", True),
-        ("HTTPS://EXAMPLE.INVALID:443/mcp?token=other-secret#ignored", True),
+        ("https://example.invalid/mcp?token=synthetic-secret", True),
+        ("https://example.invalid/mcp", False),
+        ("HTTPS://EXAMPLE.INVALID:443/mcp?token=other-secret#ignored", False),
         ("https://other.invalid/mcp", False),
         ("http://example.invalid/mcp", False),
         ("https://example.invalid:8443/mcp", False),
