@@ -160,6 +160,78 @@ def test_unknown_missing_file(tmp_path: Path) -> None:
     assert isinstance(result, Unknown) and result.reason == "FileNotFoundError"
 
 
+@pytest.mark.parametrize(
+    "expression",
+    [
+        '(mcp.tool(name="hidden")(lambda: "x"), str)[1]',
+        "register()",
+        "lambda: str",
+        "(hidden := str)",
+        "[str for _ in []]",
+        "{key: str for key in []}",
+        "(str for _ in [])",
+        "mcp.tool",
+        "str | register()",
+    ],
+)
+@pytest.mark.parametrize("location", ["return", "parameter", "default", "decorator", "hint"])
+def test_unknown_active_declaration_expressions(tmp_path: Path, expression: str, location: str) -> None:
+    decorator = "@mcp.tool()"
+    parameter = "value: str"
+    returns = "str"
+    if location == "return":
+        returns = expression
+    elif location == "parameter":
+        parameter = f"value: {expression}"
+    elif location == "default":
+        parameter = f"value: str = {expression}"
+    elif location == "decorator":
+        decorator = f"@mcp.tool(description={expression})"
+    else:
+        decorator = f'@mcp.tool(annotations={{"readOnlyHint": {expression}}})'
+    path = tmp_path / "inert.py.txt"
+    path.write_text(f'mcp = FastMCP("x")\n{decorator}\ndef outer({parameter}) -> {returns}: pass\n')
+
+    result = extract_from_source(path)
+
+    assert isinstance(result, Unknown)
+    assert result.reason
+    assert str(tmp_path) not in result.reason
+
+
+@pytest.mark.parametrize(
+    "annotation", ["str", "None", "dict", "list", "dict[str, list[int]]", "'list[str]'", '"str"']
+)
+def test_inert_return_annotations(tmp_path: Path, annotation: str) -> None:
+    path = tmp_path / "inert.py.txt"
+    path.write_text(f'mcp = FastMCP("x")\n@mcp.tool()\ndef outer() -> {annotation}: pass\n')
+    result = extract_from_source(path)
+    assert isinstance(result, ServerSurface)
+    assert [tool.name for tool in result.tools] == ["outer"]
+
+
+@pytest.mark.parametrize(
+    "annotation", ["'register()'", "custom", "list[register()]", "dict[str]", "list[str, int]", "set()"]
+)
+def test_unknown_non_allowlisted_return_annotations(tmp_path: Path, annotation: str) -> None:
+    path = tmp_path / "inert.py.txt"
+    path.write_text(f'mcp = FastMCP("x")\n@mcp.tool()\ndef outer() -> {annotation}: pass\n')
+    result = extract_from_source(path)
+    assert isinstance(result, Unknown) and result.reason
+
+
+def test_unknown_rebound_annotation_type(tmp_path: Path) -> None:
+    path = tmp_path / "inert.py.txt"
+    path.write_text("""mcp = FastMCP("x")
+@mcp.tool()
+def list(): pass
+@mcp.tool()
+def outer() -> list[str]: pass
+""")
+    result = extract_from_source(path)
+    assert isinstance(result, Unknown) and "rebind" in result.reason
+
+
 def test_unknown_metadata_reason_omits_input_values(tmp_path: Path) -> None:
     path = tmp_path / "inert.py.txt"
     path.write_text(

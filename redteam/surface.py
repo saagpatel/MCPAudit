@@ -129,11 +129,56 @@ class _Unsupported(ValueError):
 
 
 def _literal(node: ast.expr) -> object:
+    # literal_eval alone also accepts forms such as set(). Keep the grammar
+    # explicit: no calls, unpacking, operators with user operands, or bindings.
+    if isinstance(node, ast.Constant) and (node.value is None or type(node.value) in (str, bool, int, float)):
+        return node.value
+    if isinstance(node, ast.List):
+        return [_literal(item) for item in node.elts]
+    if isinstance(node, ast.Dict):
+        for key, child in zip(node.keys, node.values, strict=True):
+            if key is None:
+                raise _Unsupported("metadata dictionary unpacking is unsupported")
+            _literal(key)
+            _literal(child)
+    elif not (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, (ast.UAdd, ast.USub))
+        and isinstance(node.operand, ast.Constant)
+        and type(node.operand.value) in (int, float)
+    ):
+        raise _Unsupported("metadata must use inert literal forms")
     try:
         value: object = ast.literal_eval(node)
     except (ValueError, TypeError, SyntaxError) as exc:
         raise _Unsupported("metadata must be literal") from exc
     return value
+
+
+_ANNOTATION_NAMES = {"str", "int", "float", "bool", "bytes", "object", "dict", "list"}
+
+
+def _annotation(node: ast.expr) -> None:
+    """Accept only known builtin types, including inert forward references."""
+    if isinstance(node, ast.Name) and node.id in _ANNOTATION_NAMES:
+        return
+    if isinstance(node, ast.Constant):
+        if node.value is None:
+            return
+        if isinstance(node.value, str):
+            # FastMCP may resolve string annotations later. Validate their
+            # contents too, without evaluating a forward reference.
+            _annotation(ast.parse(node.value, mode="eval", feature_version=(3, 11)).body)
+            return
+    if isinstance(node, ast.Subscript) and isinstance(node.value, ast.Name):
+        if node.value.id == "list" and not isinstance(node.slice, ast.Tuple):
+            _annotation(node.slice)
+            return
+        if node.value.id == "dict" and isinstance(node.slice, ast.Tuple) and len(node.slice.elts) == 2:
+            for item in node.slice.elts:
+                _annotation(item)
+            return
+    raise _Unsupported("annotations must use inert known type forms")
 
 
 def _is_attr(node: ast.AST, name: str) -> bool:
@@ -157,6 +202,8 @@ def _schema(node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, object]:
     properties: dict[str, object] = {}
     required: list[str] = []
     for param, default in zip(params, defaults, strict=True):
+        if param.annotation is not None:
+            _annotation(param.annotation)
         if not isinstance(param.annotation, ast.Name) or param.annotation.id not in types:
             raise _Unsupported(f"parameter {param.arg}: only str/int/float/bool annotations are supported")
         kind = param.annotation.id
@@ -179,6 +226,10 @@ def _schema(node: ast.FunctionDef | ast.AsyncFunctionDef) -> dict[str, object]:
 
 
 def _tool(node: ast.FunctionDef | ast.AsyncFunctionDef) -> SurfaceTool:
+    if node.name in _ANNOTATION_NAMES:
+        raise _Unsupported("tool declarations must not rebind known annotation types")
+    if node.returns is not None:
+        _annotation(node.returns)
     if len(node.decorator_list) != 1:
         raise _Unsupported("tools must have exactly one @mcp.tool decorator")
     decorator = node.decorator_list[0]
