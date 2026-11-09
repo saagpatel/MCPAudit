@@ -9,7 +9,7 @@ from pydantic import TypeAdapter, ValidationError
 from mcp_audit.api import parse_config as parse_mcp_config
 from mcp_audit.models import PinVerificationState, ServerConfig
 from mcp_audit.pinning import PinStore
-from redteam.catalog import catalog_surface, load_catalog
+from redteam.catalog import CATALOG, CATALOG_FILES, catalog_surface, load_catalog
 from redteam.chains.labeler import ToolLabel, label_server
 from redteam.chains.templates import TEMPLATES, Template
 from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceTool
@@ -258,6 +258,7 @@ def load_config(
     path: Path,
     surfaces_file: Path | None = None,
     pins_dir: Path | None = None,
+    input_paths: list[Path] | None = None,
 ) -> list[ConfiguredServer]:
     """Read an explicit JSON/Codex TOML config and optional explicit surfaces file."""
     explicit: dict[str, ServerSurface] = {}
@@ -285,7 +286,15 @@ def load_config(
             target = path.parent / filename
             if target.resolve().parent != path.resolve().parent:
                 raise ValueError("surface must be a filename adjacent to config")
+            if input_paths is not None:
+                input_paths.append(target)
             explicit[name] = ServerSurface.load(target)
+    if input_paths is not None and pins_dir is not None:
+        input_paths.extend(
+            pins_dir / name for name in (".mcp-audit-pins.yaml", "signing-key.pem", "trusted-keys.yaml")
+        )
+    if input_paths is not None:
+        input_paths.extend(CATALOG / name for name in CATALOG_FILES.values())
     return resolve_configs(_read_configs(path), explicit, pins_dir)
 
 

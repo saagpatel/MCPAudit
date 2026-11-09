@@ -10,6 +10,10 @@ from redteam.chains.pairs import load_config
 from redteam.chains.report import build_report, to_json, to_markdown
 
 
+class OutputConflict(ValueError):
+    """A report destination would overwrite an input or another report."""
+
+
 def _validate_outputs(outputs: list[Path | None], inputs: list[Path | None], pins_dir: Path | None) -> None:
     selected = [path for path in outputs if path is not None]
     protected = [path for path in inputs if path is not None]
@@ -18,9 +22,9 @@ def _validate_outputs(outputs: list[Path | None], inputs: list[Path | None], pin
             if path.resolve() == other.resolve() or (
                 path.exists() and other.exists() and path.samefile(other)
             ):
-                raise ValueError("report destinations must be distinct from each other and their inputs")
+                raise OutputConflict("report destinations must be distinct from each other and their inputs")
         if pins_dir is not None and path.resolve().is_relative_to(pins_dir.resolve()):
-            raise ValueError("report destination must be outside the selected pin directory")
+            raise OutputConflict("report destination must be outside the selected pin directory")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -43,7 +47,14 @@ def main(argv: list[str] | None = None) -> int:
         _validate_outputs(
             [options.json_path, options.md_path], [options.config, options.surfaces], options.pins
         )
-        servers = load_config(options.config, options.surfaces, pins_dir=options.pins)
+        input_paths = [options.config, options.surfaces]
+        additional_inputs: list[Path] = []
+        servers = load_config(
+            options.config, options.surfaces, pins_dir=options.pins, input_paths=additional_inputs
+        )
+        _validate_outputs(
+            [options.json_path, options.md_path], [*input_paths, *additional_inputs], options.pins
+        )
         report = build_report(servers, reproduce=options.reproduce)
         markdown = to_markdown(report)
         for path, content in ((options.json_path, to_json(report)), (options.md_path, markdown)):
@@ -57,6 +68,13 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             if reproduction.get("status") == "SKIPPED" and not options.allow_skip:
                 return 3
+    except OutputConflict:
+        print(
+            "chains failed (ValueError); report destinations must be distinct from inputs and each other "
+            "and outside the pin directory",
+            file=sys.stderr,
+        )
+        return 2
     except (ValueError, OSError) as exc:
         # Parsing exceptions can contain credentials or snippets. Emit the class only.
         print(

@@ -87,12 +87,13 @@ def test_cli_writes_both_reports(tmp_path: Path, capsys: pytest.CaptureFixture[s
     assert json.loads(json_path.read_text())["ranked"][0]["template"] == "git-clean-filter"
     markdown = md_path.read_text()
     assert "| Steps |" in markdown
-    tools = r"filesystem.edit_file\|move_file\|write_file"
+    tools = r"filesystem.create_directory\|edit_file\|move_file\|write_file"
     assert f"{tools} → git.git_add" in markdown
     assert f"{tools} → git.git_commit" in markdown
     rows = json.loads(json_path.read_text())["ranked"]
     assert [row["template"] for row in rows] == ["git-clean-filter", "git-hook"]
     assert rows[0]["alternative_tool_pairs"] == [
+        {"writer_tool": "create_directory", "executor_tool": "git_add"},
         {"writer_tool": "edit_file", "executor_tool": "git_add"},
         {"writer_tool": "move_file", "executor_tool": "git_add"},
         {"writer_tool": "write_file", "executor_tool": "git_add"},
@@ -253,3 +254,42 @@ def test_cli_rejects_aliased_report_outputs(tmp_path: Path) -> None:
         == 2
     )
     assert not report.exists()
+
+
+@pytest.mark.parametrize("alias", ["direct", "symlink", "hardlink"])
+def test_cli_rejects_mapped_surface_output_aliases(
+    tmp_path: Path, alias: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"mcpServers": {"server": {"command": "synthetic"}}}))
+    surface = tmp_path / "surface.json"
+    surface.write_text(ServerSurface(server_name="server", source="fixture", tools=[]).to_json())
+    original = surface.read_bytes()
+    mapping = tmp_path / "mapping.json"
+    mapping.write_text(json.dumps({"server": surface.name}))
+    output = tmp_path / "alias.json"
+    if alias == "direct":
+        output = surface
+    elif alias == "symlink":
+        output.symlink_to(surface)
+    else:
+        output.hardlink_to(surface)
+    assert main(["run", "--config", str(config), "--surfaces", str(mapping), "--json", str(output)]) == 2
+    assert surface.read_bytes() == original
+    assert "distinct from inputs" in capsys.readouterr().err
+
+
+def test_cli_rejects_pin_file_hardlink_and_output_inside_pin_directory(tmp_path: Path) -> None:
+    config = tmp_path / "config.json"
+    config.write_text(json.dumps({"mcpServers": {"server": {"command": "synthetic"}}}))
+    pins = tmp_path / "pins"
+    pins.mkdir()
+    pin = pins / ".mcp-audit-pins.yaml"
+    pin.write_text("servers: {}\n")
+    alias = tmp_path / "pin-alias.json"
+    alias.hardlink_to(pin)
+    original = pin.read_bytes()
+    for output in (alias, pins / "report.json"):
+        assert main(["run", "--config", str(config), "--pins", str(pins), "--json", str(output)]) == 2
+    assert pin.read_bytes() == original
+    assert not (pins / "report.json").exists()
