@@ -19,7 +19,13 @@ from mcp_audit.models import ClientType, ServerConfig, ToolInfo, TransportType
 from mcp_audit.pin_signing import generate_keypair
 from mcp_audit.pinning import PinStore
 from redteam.chains.__main__ import main
-from redteam.chains.discovery import DiscoveryServers, _server, discover_servers
+from redteam.chains.discovery import (
+    DiscoveryServers,
+    _dropped_entries,
+    _server,
+    _validate_config_files,
+    discover_servers,
+)
 from redteam.chains.dxt import MAX_INPUT_BYTES, DxtCollector, read_regular_file
 from redteam.chains.pairs import resolve_configs
 from redteam.chains.report import build_report, to_json, to_markdown
@@ -212,6 +218,164 @@ def test_absent_inputs_are_not_errors(real_shadow: ModuleType) -> None:
     servers = discover_servers()
     assert isinstance(servers, DiscoveryServers)
     assert not servers and servers.collector_errors == []
+
+
+@pytest.fixture(
+    params=["map", "entry", "args", "args-item", "command", "url", "env", "headers", "launch", "mix"]
+)
+def malformed_launch(request: pytest.FixtureRequest) -> tuple[str, str, str]:
+    """Equivalent malformed JSON/TOML documents, containing sentinel values."""
+    cases: dict[str, tuple[object, str, str]] = {
+        "map": ([], 'mcp_servers = ["never-retained"]', "mcpServers"),
+        "entry": ({"broken": []}, 'mcp_servers.broken = ["never-retained"]', "mcpServers"),
+        "args": (
+            {"command": "node", "args": "never-retained"},
+            'command = "node"\nargs = "never-retained"',
+            "args",
+        ),
+        "args-item": ({"command": "node", "args": [1]}, 'command = "node"\nargs = [1]', "args"),
+        "command": ({"command": ["never-retained"]}, 'command = ["never-retained"]', "command"),
+        "url": ({"url": ["never-retained"]}, 'url = ["never-retained"]', "url"),
+        "env": (
+            {"command": "node", "env": ["never-retained"]},
+            'command = "node"\nenv = ["never-retained"]',
+            "env",
+        ),
+        "headers": (
+            {"url": "https://example.invalid", "headers": ["never-retained"]},
+            'url = "https://example.invalid"\nheaders = ["never-retained"]',
+            "headers",
+        ),
+        "launch": ({"env": {"TOKEN": "never-retained"}}, 'env = {TOKEN = "never-retained"}', "command/url"),
+        "mix": (
+            {"broken": [], "valid": {"command": "node"}},
+            'mcp_servers.broken = []\n[mcp_servers.valid]\ncommand = "node"',
+            "mcpServers",
+        ),
+    }
+    case = str(request.param)
+    raw, toml, field = cases[case]
+    block = raw if case in {"map", "entry", "mix"} else {"broken": raw}
+    if case not in {"map", "entry", "mix"}:
+        toml = "[mcp_servers.broken]\n" + toml
+    return json.dumps({"mcpServers": block}), toml, field
+
+
+@pytest.mark.parametrize(
+    "kind", ["claude_desktop_config", "project_config", "codex_config", "codex_profile_config"]
+)
+def test_config_shape_validation_is_value_free(
+    tmp_path: Path, kind: str, malformed_launch: tuple[str, str, str]
+) -> None:
+    json_content, toml_content, field = malformed_launch
+    codex = kind.startswith("codex")
+    path = tmp_path / ("config.toml" if codex else "mcp.json")
+    path.write_text(toml_content if codex else json_content)
+    errors, blocked, _ = _validate_config_files([(kind, path)])
+    assert errors and blocked
+    expected_field = "mcp_servers" if codex and field == "mcpServers" else field
+    assert any(f"field {expected_field} (" in error for error in errors)
+    assert all(error.startswith(f"{kind} collector error:") for error in errors)
+    if field != "mcpServers" or '"broken"' in json_content:
+        assert any('entry "broken"' in error for error in errors)
+    assert "never-retained" not in repr(errors) and str(tmp_path) not in repr(errors)
+
+
+@pytest.mark.parametrize(
+    "kind", ["claude_desktop_config", "codex_config", "codex_profile_config", "project_config"]
+)
+def test_real_collectors_cannot_hide_malformed_launches(
+    real_shadow: ModuleType,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    kind: str,
+    malformed_launch: tuple[str, str, str],
+) -> None:
+    paths: object = real_shadow.DiscoveryPaths.default()
+    if kind == "codex_profile_config":
+        path = _path(paths, "codex_config").parent / "synthetic.config.toml"
+    elif kind == "project_config":
+        path = _path(paths, "projects_root") / "synthetic" / ".mcp.json"
+    else:
+        path = _path(paths, kind)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(malformed_launch[1] if kind.startswith("codex") else malformed_launch[0])
+    servers = discover_servers()
+    assert isinstance(servers, DiscoveryServers)
+    assert servers.collector_errors and not servers
+    report = build_report(servers)
+    assert report["analysis_incomplete"] is True
+    assert "never-retained" not in to_json(report)
+    assert str(tmp_path) not in repr(servers.collector_errors)
+    assert main(["run", "--discover"]) == 1
+    capsys.readouterr()
+
+
+@pytest.mark.parametrize("kind", ["claude_desktop_config", "codex_config", "project_config"])
+def test_real_collector_dropped_sightings_mark_incomplete(
+    real_shadow: ModuleType, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    paths: object = real_shadow.DiscoveryPaths.default()
+    if kind == "project_config":
+        path = _path(paths, "projects_root") / "synthetic" / ".mcp.json"
+        module, name = "project_mcp", "ProjectMcpJsonCollector"
+    else:
+        path = _path(paths, kind)
+        module, name = (
+            ("codex", "CodexCollector")
+            if kind == "codex_config"
+            else ("claude_desktop", "ClaudeDesktopCollector")
+        )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        '[mcp_servers.valid]\ncommand = "node"'
+        if kind == "codex_config"
+        else '{"mcpServers": {"valid": {"command": "node"}}}'
+    )
+    initial = discover_servers()
+    assert isinstance(initial, DiscoveryServers) and not initial.collector_errors
+    collector_class = getattr(importlib.import_module(f"shadow_mcp.collectors.{module}"), name)
+    monkeypatch.setattr(collector_class, "collect", lambda self: [])
+    servers = discover_servers()
+    assert isinstance(servers, DiscoveryServers)
+    assert servers.collector_errors == [f"{kind} collector dropped 1 entries"]
+    assert build_report(servers)["analysis_incomplete"] is True
+
+
+def test_sighting_counts_are_per_file_and_before_deduplication(tmp_path: Path) -> None:
+    first, second = tmp_path / "first.toml", tmp_path / "second.toml"
+    entries: list[object] = [
+        SimpleNamespace(provenance={"source": "codex", "location": str(first)}) for _ in range(2)
+    ]
+    assert _dropped_entries(
+        entries, {("codex_config", first): 2, ("codex_profile_config", second): 1}, set()
+    ) == ["codex_profile_config collector dropped 1 entries"]
+
+
+@pytest.mark.parametrize("kind", ["claude_desktop_config", "codex_config"])
+def test_valid_launch_shapes_and_missing_server_maps_are_allowed(tmp_path: Path, kind: str) -> None:
+    codex = kind == "codex_config"
+    path = tmp_path / ("config.toml" if codex else "mcp.json")
+    path.write_text(
+        '[mcp_servers.valid]\ncommand = "node"\nargs = ["synthetic.js"]\n'
+        "env = {TOKEN = 42}\nheaders = {X = 42}"
+        if codex
+        else json.dumps(
+            {
+                "mcpServers": {
+                    "valid": {
+                        "command": "node",
+                        "args": ["synthetic.js"],
+                        "env": {"TOKEN": 42},
+                        "headers": {"X": 42},
+                    }
+                }
+            }
+        )
+    )
+    assert _validate_config_files([(kind, path)]) == ([], set(), {(kind, path): 1})
+    path.write_text("" if codex else "{}")
+    assert _validate_config_files([(kind, path)]) == ([], set(), {(kind, path): 0})
 
 
 def test_real_discovery_uses_local_dxt_sightings(real_shadow: ModuleType) -> None:

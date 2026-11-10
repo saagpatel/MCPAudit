@@ -160,10 +160,51 @@ def _protect_configured_paths(
     return selected
 
 
-def _validate_config_files(selected: list[tuple[str, Path]]) -> tuple[list[str], set[str]]:
+def _validate_server_map(block: object, kind: str, field: str) -> tuple[int, list[str]]:
+    """Validate launch shapes without putting configuration values in errors."""
+    if not isinstance(block, dict):
+        return 0, [f"{kind} collector error: field {field} (TypeError)"]
+    errors: list[str] = []
+    valid = 0
+    for name, entry in sorted(block.items()):
+        prefix = f"{kind} collector error: entry {json.dumps(name)}"
+        if not isinstance(entry, dict):
+            errors.append(f"{prefix} field {field} (TypeError)")
+            continue
+        invalid: list[str] = []
+        url_fields = ("url",) if kind.startswith("codex") else ("url", "serverUrl", "endpoint")
+        for key in ("command", *url_fields):
+            if key in entry and not isinstance(entry[key], str):
+                invalid.append(key)
+        if "args" in entry and (
+            not isinstance(entry["args"], list) or any(not isinstance(arg, str) for arg in entry["args"])
+        ):
+            invalid.append("args")
+        for key in ("env", "headers"):
+            if key in entry and (
+                not isinstance(entry[key], dict) or any(not isinstance(item, str) for item in entry[key])
+            ):
+                invalid.append(key)
+        # JSON collectors call .lower() on these fields before inferring transport.
+        if not kind.startswith("codex"):
+            for key in ("type", "transport"):
+                if key in entry and not isinstance(entry[key], str):
+                    invalid.append(key)
+        errors.extend(f"{prefix} field {key} (TypeError)" for key in invalid)
+        if not entry.get("command") and not any(entry.get(key) for key in url_fields):
+            errors.append(f"{prefix} field command/url (ValueError)")
+        elif not invalid:
+            valid += 1
+    return valid, errors
+
+
+def _validate_config_files(
+    selected: list[tuple[str, Path]],
+) -> tuple[list[str], set[str], dict[tuple[str, Path], int]]:
     """Detect errors hidden by fail-soft collectors without retaining values."""
     errors: list[str] = []
     blocked: set[str] = set()
+    expected: dict[tuple[str, Path], int] = {}
     sources = {
         "claude_desktop_config": "claude_desktop",
         "codex_config": "codex",
@@ -177,12 +218,63 @@ def _validate_config_files(selected: list[tuple[str, Path]]) -> tuple[list[str],
             document: object = tomllib.loads(content) if path.suffix == ".toml" else json.loads(content)
             if not isinstance(document, dict):
                 raise ValueError("config must be an object")
+            field = "mcp_servers" if kind.startswith("codex") else "mcpServers"
+            count, shape_errors = _validate_server_map(document.get(field, {}), kind, field)
+            if kind == "claude_code_config" and "projects" in document:
+                projects = document["projects"]
+                if not isinstance(projects, dict):
+                    shape_errors.append(f"{kind} collector error: field projects (TypeError)")
+                else:
+                    for project in projects.values():
+                        if not isinstance(project, dict):
+                            shape_errors.append(f"{kind} collector error: field projects entry (TypeError)")
+                            continue
+                        project_count, project_errors = _validate_server_map(
+                            project.get(field, {}), kind, f"projects.{field}"
+                        )
+                        count += project_count
+                        shape_errors.extend(project_errors)
+            errors.extend(shape_errors)
+            if shape_errors:
+                blocked.add(sources[kind])
+            expected[(kind, path)] = count
         except FileNotFoundError:
             continue  # Absent inputs are normal, including absent parent dirs.
         except (OSError, UnicodeError, ValueError, RecursionError) as exc:
             errors.append(f"{kind} collector error ({type(exc).__name__})")
             blocked.add(sources[kind])
-    return errors, blocked
+    return errors, blocked, expected
+
+
+def _dropped_entries(
+    entries: list[object], expected: dict[tuple[str, Path], int], blocked: set[str]
+) -> list[str]:
+    """Compare sightings before deduplication, using each collector's provenance."""
+    sources = {
+        "claude_desktop_config": ("claude_desktop", "claude_desktop"),
+        "codex_config": ("codex", "codex"),
+        "codex_profile_config": ("codex", "codex"),
+        "project_config": ("project_mcp", "project_mcp_json"),
+        "claude_code_config": ("claude_code", "claude_code"),
+    }
+    observed: dict[tuple[str | None, str | None], int] = {}
+    for entry in entries:
+        source, location = _provenance(entry)
+        if source == "claude_code" and location is not None:
+            location = location.split("#projects.", 1)[0]
+        key = (source, location)
+        observed[key] = observed.get(key, 0) + 1
+    errors: list[str] = []
+    for (kind, path), count in sorted(expected.items()):
+        module, source = sources[kind]
+        if module in blocked:
+            continue
+        difference = count - observed.get((source, str(path)), 0)
+        if difference > 0:
+            errors.append(f"{kind} collector dropped {difference} entries")
+        elif difference < 0:
+            errors.append(f"{kind} collector returned {-difference} unexpected entries")
+    return errors
 
 
 def _project_files(root: Path, depth: int) -> list[Path]:
@@ -262,7 +354,7 @@ def discover_servers(
     config_files = _protect_configured_paths(paths, include_claude_code, input_paths, input_directories)
     if validate_inputs is not None:
         validate_inputs()
-    validation_errors, blocked = _validate_config_files(config_files)
+    validation_errors, blocked, expected = _validate_config_files(config_files)
     # Never hand a rejected file to a fail-soft collector's unbounded reader.
     selected = [
         factory(paths)
@@ -285,6 +377,7 @@ def discover_servers(
         notes.append(f"shadow-mcp source (unrecognized): {unknown_count}")
     collector_errors = ["shadow-mcp collector error (details withheld)" for _ in _strings(errors, "errors")]
     collector_errors.extend(validation_errors)
+    collector_errors.extend(_dropped_entries(entries, expected, blocked))
     collector_errors.extend(dxt_collector.errors)
     notes.extend(collector_errors)
     source_counts = {key: counts[key] for key in sorted(counts) if key in KNOWN_SOURCE_KEYS}
