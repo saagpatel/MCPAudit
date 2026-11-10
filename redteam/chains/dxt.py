@@ -8,7 +8,7 @@ import stat
 from dataclasses import dataclass
 from pathlib import Path
 
-from mcp_audit.models import ServerConfig
+from mcp_audit.models import ServerConfig, TransportType
 from redteam.surface import ServerSurface, SurfaceTool
 
 MAX_INPUT_BYTES = 1024 * 1024
@@ -228,7 +228,7 @@ def manifest_surface(
     extension: Path | None = None,
     input_paths: list[Path] | None = None,
 ) -> tuple[ServerSurface | None, tuple[str, ...], str | None]:
-    """Resolve a manifest only when its declared command and args exactly match."""
+    """Resolve a manifest only when its complete declared launch identity matches."""
     dxt_placeholders = {"${__dirname}", "${user_config.allowed_directories}"}
     has_placeholder = any(any(token in argument for token in dxt_placeholders) for argument in config.args)
     if extension is None and not has_placeholder:
@@ -268,12 +268,20 @@ def manifest_surface(
             if not isinstance(launch, dict):
                 continue
             args = launch.get("args")
+            env = launch.get("env", {})
             if (
-                bool(config.command)
+                config.transport == TransportType.STDIO
+                and config.url is None
+                and launch.get("transport", launch.get("type", "stdio")) == "stdio"
+                and launch.get("url") is None
+                and bool(config.command)
                 and launch.get("command") == config.command
                 and isinstance(args, list)
                 and all(isinstance(item, str) for item in args)
                 and args == config.args
+                and isinstance(env, dict)
+                and all(isinstance(key, str) for key in env)
+                and set(env) == set(config.env_keys)
             ):
                 matches.append((directory, document))
         if len(matches) != 1:

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mcp_audit.models import ClientType, ServerConfig
+from mcp_audit.models import ClientType, ServerConfig, TransportType
 from redteam.catalog import catalog_surface, load_catalog
 from redteam.chains.__main__ import main
 from redteam.chains.discovery import DiscoveryServers
@@ -328,6 +328,60 @@ def test_manifest_identity_keeps_placeholders_literal(tmp_path: Path) -> None:
     expanded = _config(args=[str(extension / "dist/index.js"), "/synthetic/root"])
     surface, _, reason = manifest_surface(expanded, extensions, extension)
     assert surface is None and reason is not None and "unmatched" in reason
+
+
+@pytest.mark.parametrize("selected", [False, True])
+@pytest.mark.parametrize("env_keys", [["TOKEN", "PROFILE"], ["PROFILE", "TOKEN"], ["OTHER"], [], ["TOKEN"]])
+def test_manifest_identity_requires_equal_environment_key_sets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, selected: bool, env_keys: list[str]
+) -> None:
+    extensions, extension = _extension(tmp_path)
+    manifest = extension / "manifest.json"
+    document = json.loads(manifest.read_text())
+    document["server"]["mcp_config"]["env"] = {"TOKEN": "never-retained", "PROFILE": "other-value"}
+    manifest.write_text(json.dumps(document))
+    settings = tmp_path / "Claude Extensions Settings"
+    settings.mkdir()
+    (settings / f"{extension.name}.json").write_text(
+        json.dumps({"userConfig": {"allowed_directories": ["synthetic/project"]}})
+    )
+    config = _config().model_copy(update={"env_keys": env_keys})
+    matches = set(env_keys) == {"TOKEN", "PROFILE"}
+    if not matches:
+
+        def forbidden_roots(*args: object, **kwargs: object) -> None:
+            pytest.fail("mismatched manifest must not read settings")
+
+        monkeypatch.setattr("redteam.chains.dxt._roots", forbidden_roots)
+    server = resolve_configs(
+        [config], dxt_dir=extensions, extensions={config.name: extension} if selected else {}
+    )[0]
+    assert server.tool_surface == ("KNOWN" if matches else "UNKNOWN")
+    if matches:
+        assert server.source == "dxt-manifest" and server.surface is not None
+        assert server.roots == ("synthetic/project",)
+    else:
+        assert server.surface is None and server.roots == ()
+        assert server.reason is not None and "unmatched" in server.reason
+    rendered = to_json(build_report([server]))
+    assert "never-retained" not in rendered and "other-value" not in rendered
+
+
+@pytest.mark.parametrize("side", ["config", "manifest"])
+@pytest.mark.parametrize("field", ["transport", "url"])
+def test_manifest_identity_requires_stdio_and_absent_url(tmp_path: Path, side: str, field: str) -> None:
+    extensions, extension = _extension(tmp_path)
+    config = _config()
+    value = "http" if field == "transport" else "https://example.invalid/mcp"
+    if side == "config":
+        config = config.model_copy(update={field: TransportType.HTTP if field == "transport" else value})
+    else:
+        manifest = extension / "manifest.json"
+        document = json.loads(manifest.read_text())
+        document["server"]["mcp_config"][field] = value
+        manifest.write_text(json.dumps(document))
+    surface, roots, reason = manifest_surface(config, extensions, extension)
+    assert surface is None and roots == () and reason is not None and "unmatched" in reason
 
 
 @pytest.mark.parametrize("command", [None, ""])
