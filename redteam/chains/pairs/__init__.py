@@ -13,6 +13,7 @@ from mcp_audit.discovery.base import ConfigParseError
 from mcp_audit.models import PinVerificationState, ServerConfig, TransportType
 from mcp_audit.pinning import PinStore
 from redteam.catalog import CATALOG, CATALOG_FILES, catalog_surface, load_catalog
+from redteam.chains.dxt import manifest_surface
 from redteam.chains.labeler import ToolLabel, label_server
 from redteam.chains.templates import TEMPLATES, Template
 from redteam.surface import ServerSurface, SurfaceAnnotations, SurfaceConfig, SurfaceTool
@@ -272,13 +273,37 @@ def resolve_configs(
     explicit_surfaces: dict[str, ServerSurface] | None = None,
     pins_dir: Path | None = None,
     provenance: dict[str, tuple[str | None, str | None]] | None = None,
+    *,
+    dxt_dir: Path | None = None,
+    extensions: dict[str, Path] | None = None,
+    input_paths: list[Path] | None = None,
 ) -> list[ConfiguredServer]:
-    """Resolve explicit metadata, selected pins, then catalog."""
+    """Resolve explicit metadata, selected pins, DXT manifests, then catalog."""
     explicit = explicit_surfaces or {}
+    if input_paths is not None:
+        input_paths.extend(CATALOG / name for name in CATALOG_FILES.values())
+        if pins_dir is not None:
+            input_paths.extend(
+                pins_dir / name for name in (".mcp-audit-pins.yaml", "signing-key.pem", "trusted-keys.yaml")
+            )
     catalog = load_catalog()
     result: list[ConfiguredServer] = []
     for config in sorted(configs, key=lambda server: server.name):
         name = config.name
+        header_keys_state: object = getattr(config, "header_keys_state", "AVAILABLE")
+        if header_keys_state == "UNAVAILABLE":
+            provenance_source, provenance_location = (provenance or {}).get(name, (None, None))
+            result.append(
+                ConfiguredServer(
+                    name,
+                    None,
+                    reason="launch identity incomplete: header keys unavailable from discovery",
+                    env_keys=tuple(sorted(config.env_keys)),
+                    provenance_source=provenance_source,
+                    provenance_location=provenance_location,
+                )
+            )
+            continue
         args = config.args
         command = config.command
         roots: tuple[str, ...] = ()
@@ -315,10 +340,17 @@ def resolve_configs(
             and not pin_withheld
             and config.transport == TransportType.STDIO
         ):
-            surface, catalog_reason = catalog_surface(config, catalog)
-            reason = "; ".join(part for part in (reason, catalog_reason) if part) or None
+            surface, dxt_roots, dxt_reason = manifest_surface(
+                config, dxt_dir, (extensions or {}).get(name), input_paths=input_paths
+            )
+            reason = "; ".join(part for part in (reason, dxt_reason) if part) or None
             if surface is not None:
-                source = "catalog"
+                source, roots = "dxt-manifest", dxt_roots
+            elif dxt_reason is None:
+                surface, catalog_reason = catalog_surface(config, catalog)
+                reason = "; ".join(part for part in (reason, catalog_reason) if part) or None
+                if surface is not None:
+                    source = "catalog"
         if surface is not None:
             # All sources must expose the same verified launch identity to the
             # labeler, even when the configured name is an arbitrary alias.
@@ -352,7 +384,7 @@ def resolve_configs(
                         if part
                     )
                     if pin_withheld
-                    else reason or "No explicit, pin, or catalog surface"
+                    else reason or "No explicit, pin, DXT manifest, or catalog surface"
                 ),
                 tuple(sorted(config.env_keys)),
                 source,
@@ -368,6 +400,8 @@ def load_config(
     surfaces_file: Path | None = None,
     pins_dir: Path | None = None,
     input_paths: list[Path] | None = None,
+    *,
+    dxt_dir: Path | None = None,
 ) -> list[ConfiguredServer]:
     """Read an explicit JSON/Codex TOML config and optional explicit surfaces file."""
     explicit: dict[str, ServerSurface] = {}
@@ -398,12 +432,6 @@ def load_config(
             if input_paths is not None:
                 input_paths.append(target)
             explicit[name] = ServerSurface.load(target)
-    if input_paths is not None and pins_dir is not None:
-        input_paths.extend(
-            pins_dir / name for name in (".mcp-audit-pins.yaml", "signing-key.pem", "trusted-keys.yaml")
-        )
-    if input_paths is not None:
-        input_paths.extend(CATALOG / name for name in CATALOG_FILES.values())
     errors: list[ConfigParseError] = []
     configs = _read_configs(path, errors)
     if len({config.name for config in configs}) != len(configs):
@@ -411,7 +439,7 @@ def load_config(
     unused = set(explicit) - {config.name for config in configs} - {error.server_name for error in errors}
     if unused:
         raise AmbiguousInput("surfaces mapping contains an unknown server name")
-    resolved = resolve_configs(configs, explicit, pins_dir)
+    resolved = resolve_configs(configs, explicit, pins_dir, dxt_dir=dxt_dir, input_paths=input_paths)
     resolved.extend(
         ConfiguredServer(
             error.server_name or "<unknown entry>",
