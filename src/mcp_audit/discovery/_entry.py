@@ -22,7 +22,7 @@ def parse_server_entry(
 ) -> ServerConfig:
     """Convert one client config entry into a common ServerConfig."""
     raw_type = entry.get("type", "")
-    if raw_type == "http":
+    if raw_type in {"http", "streamable-http"}:
         transport = TransportType.HTTP
     elif raw_type == "sse":
         transport = TransportType.SSE
@@ -86,6 +86,12 @@ def parse_server_map(
                 if field in entry and not isinstance(entry[field], str):
                     reason = f"{field} must be a string"
                     break
+            if (
+                reason is None
+                and "type" in entry
+                and entry["type"] not in {"stdio", "http", "streamable-http", "sse"}
+            ):
+                reason = "unsupported transport type; entry not audited"
             if "args" in entry and (
                 not isinstance(entry["args"], list) or any(not isinstance(arg, str) for arg in entry["args"])
             ):
