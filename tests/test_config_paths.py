@@ -62,6 +62,31 @@ async def test_explicit_config_carries_malformed_entry_findings() -> None:
     assert {f.finding_type for f in report.config_health_findings} == {"malformed_server_entry"}
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("use_url", [False, True])
+async def test_unsupported_transport_is_not_silently_inferred(use_url: bool) -> None:
+    bad = {"type": "fixture-private-unknown"}
+    bad["url" if use_url else "command"] = "https://example.invalid" if use_url else "synthetic"
+    report = await scan_config_only({"mcpServers": {"good": {"command": "synthetic"}, "bad": bad}})
+    assert [audit.server.name for audit in report.audits] == ["good"]
+    assert report.coverage["config_health"].state == "partial"
+    assert report.coverage["metadata"].state == "not_run"
+    finding = next(f for f in report.config_health_findings if f.server_name == "bad")
+    assert finding.finding_type == "malformed_server_entry"
+    assert "unsupported transport" in finding.summary
+    assert "fixture-private-unknown" not in report.model_dump_json()
+
+
+@pytest.mark.anyio
+async def test_streamable_http_transport_is_supported() -> None:
+    report = await scan_config_only(
+        {"mcpServers": {"remote": {"type": "streamable-http", "url": "https://example.invalid"}}}
+    )
+    assert report.servers_discovered == 1
+    assert report.audits[0].server.transport.value == "http"
+    assert report.coverage["config_health"].state == "complete"
+
+
 @pytest.mark.parametrize("discoverer_cls", DISCOVERERS)
 def test_duplicate_keys_are_recorded_at_all_object_depths(
     discoverer_cls: type[ConfigDiscoverer],
