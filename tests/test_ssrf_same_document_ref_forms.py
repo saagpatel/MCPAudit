@@ -6,16 +6,14 @@ array items, composition branches, and same-document `$ref` targets", and that
 for the schema metadata rules "Local references establish reachability through
 local `$anchor` declarations and percent-decoded JSON Pointer fragments".
 
-The SSRF walker resolves plain JSON Pointer refs (`#/$defs/Request`, see
-test_referenced_definition_is_scanned_at_use_site) but not a local `$anchor`
-(`#node`) or a percent-encoded pointer (`#/$defs/a%20b`). Both are
-same-document refs, so a URL parameter reached through them should give the
-same HIGH url_param_with_fetch_verb finding as the plain form. Instead the
-walker reports the medium schema_traversal_incomplete fallback. This fails
-closed (the gap is visible), but the two walkers disagree about the same
-schema.
+The SSRF walker used to resolve only plain JSON Pointer refs (`#/$defs/Request`),
+so a URL parameter reached through a local `$anchor` (`#node`) or a
+percent-encoded pointer (`#/$defs/a%20b`) dropped to the medium
+schema_traversal_incomplete fallback while the schema rules resolved it.
 
-These tests fail on current main. They document the defect; they do not fix it.
+The anchor and percent-encoded forms now resolve like the plain form. An anchor
+that is declared twice, or sits under an embedded `$id` scope, stays visibly
+incomplete.
 """
 
 from __future__ import annotations
@@ -54,4 +52,27 @@ def test_same_document_ref_forms_reach_the_url_parameter(form: str) -> None:
     findings = SsrfDetector().scan_server([tool], [])
     assert [(f.severity, f.pattern_name) for f in findings] == [
         (SsrfSeverity.HIGH, "url_param_with_fetch_verb")
+    ]
+
+
+AMBIGUOUS: dict[str, dict[str, Any]] = {
+    "duplicate-anchor": {
+        "type": "object",
+        "properties": {"t": {"$ref": "#node"}},
+        "$defs": {"a": {"$anchor": "node", **URL_DEF}, "b": {"$anchor": "node", **URL_DEF}},
+    },
+    "embedded-id-scope": {
+        "type": "object",
+        "properties": {"t": {"$ref": "#node"}},
+        "$defs": {"n": {"$id": "https://example.test/inner", "$anchor": "node", **URL_DEF}},
+    },
+}
+
+
+@pytest.mark.parametrize("form", list(AMBIGUOUS))
+def test_ambiguous_anchor_stays_visibly_incomplete(form: str) -> None:
+    tool = ToolInfo(name="fetch_doc", description="Fetch a document.", input_schema=AMBIGUOUS[form])
+    findings = SsrfDetector().scan_server([tool], [])
+    assert [(f.severity, f.pattern_name) for f in findings] == [
+        (SsrfSeverity.MEDIUM, "schema_traversal_incomplete")
     ]

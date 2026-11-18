@@ -330,12 +330,10 @@ def _origin(parsed: ParseResult) -> tuple[str, str, int | None] | None:
     return scheme, hostname.casefold(), None if port == default_port else port
 
 
-def _schema_rules(
-    tool: ToolInfo, schema: dict[str, object], *, incomplete_reasons: list[str]
-) -> list[SchemaFinding]:
-    findings: list[SchemaFinding] = []
-    reachability_incomplete: list[str] = []
-    all_nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=reachability_incomplete)
+def _reference_anchors(
+    schema: dict[str, object], all_nodes: list[dict[str, object]], walk_incomplete: list[str]
+) -> dict[str, dict[str, object] | None] | None:
+    """Map each `$anchor` to its node (None when declared twice), or None when unusable."""
     anchors: dict[str, dict[str, object] | None] = {}
     for node in all_nodes:
         anchor = node.get("$anchor")
@@ -343,11 +341,34 @@ def _schema_rules(
             anchors[anchor] = None if anchor in anchors else node
     # Embedded resources change reference scope; a partial inventory cannot
     # establish anchor uniqueness or rule out an unseen resource boundary.
-    reference_anchors = (
-        None
-        if reachability_incomplete or any(node is not schema and "$id" in node for node in all_nodes)
-        else anchors
-    )
+    if walk_incomplete or any(node is not schema and "$id" in node for node in all_nodes):
+        return None
+    return anchors
+
+
+def local_reference_target(
+    schema: dict[str, object], ref: str, cache: dict[int, dict[str, dict[str, object] | None] | None]
+) -> dict[str, object] | None:
+    """Resolve a same-document `$ref` (pointer, percent-encoded pointer or `$anchor`).
+
+    The anchor inventory is built once per schema and kept in ``cache``.
+    """
+    key = id(schema)
+    if key not in cache:
+        walk_incomplete: list[str] = []
+        nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=walk_incomplete)
+        cache[key] = _reference_anchors(schema, nodes, walk_incomplete)
+    target = _local_ref(schema, ref, cache[key])
+    return target if isinstance(target, dict) else None
+
+
+def _schema_rules(
+    tool: ToolInfo, schema: dict[str, object], *, incomplete_reasons: list[str]
+) -> list[SchemaFinding]:
+    findings: list[SchemaFinding] = []
+    reachability_incomplete: list[str] = []
+    all_nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=reachability_incomplete)
+    reference_anchors = _reference_anchors(schema, all_nodes, reachability_incomplete)
     reachable = _walk_nodes(
         schema,
         include_definitions=False,

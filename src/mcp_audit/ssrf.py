@@ -181,6 +181,7 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
     ]
     visited_nodes = 0
     property_count = 0
+    anchor_cache: dict[int, dict[str, dict[str, object] | None] | None] = {}
 
     def child_path(prefix: str, keyword: str, suffix: str, index: object | None = None) -> str:
         if pointer_paths:
@@ -205,6 +206,13 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
         ref = node.get("$ref")
         if isinstance(ref, str):
             resolved = _resolve_local_ref(schema, ref)
+            if resolved is None and ref.startswith("#"):
+                # `$anchor` and percent-encoded pointers: resolve them the way the
+                # schema metadata rules do, so both walkers reach the same nodes.
+                # Imported here because schema_rules imports this module.
+                from mcp_audit.schema_rules import local_reference_target
+
+                resolved = local_reference_target(schema, ref, anchor_cache)
             if resolved is None:
                 incomplete.add(f"unresolved or external reference: {ref}")
             else:
