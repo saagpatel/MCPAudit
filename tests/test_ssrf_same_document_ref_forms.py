@@ -11,7 +11,7 @@ test_referenced_definition_is_scanned_at_use_site) but not a local `$anchor`
 (`#node`) or a percent-encoded pointer (`#/$defs/a%20b`). Both are
 same-document refs, so a URL parameter reached through them should give the
 same HIGH url_param_with_fetch_verb finding as the plain form. Instead the
-walker reports the medium url_param_traversal_incomplete fallback. This fails
+walker reports the medium schema_traversal_incomplete fallback. This fails
 closed (the gap is visible), but the two walkers disagree about the same
 schema.
 
