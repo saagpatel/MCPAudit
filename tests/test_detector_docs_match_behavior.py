@@ -84,6 +84,8 @@ def test_escalation_doc_describes_annotation_delta_conditions() -> None:
     }
     assert _kinds(ToolAnnotations(open_world_hint=False), ToolAnnotations()) == {delta}
     assert _kinds(ToolAnnotations(read_only_hint=True), ToolAnnotations()) >= {delta}
+    assert "while `readOnlyHint` is not `true`" in doc
+    assert _kinds(None, ToolAnnotations(destructive_hint=True, read_only_hint=True)) == {delta}
 
 
 def _fetch_verb_finding(root: str) -> list[tuple[SsrfSeverity, str]]:

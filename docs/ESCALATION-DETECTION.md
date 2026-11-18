@@ -57,8 +57,11 @@ only from its name, description and schema content. So any category in the
 table can be reported as gained, `destructive` and `network` included. They are
 gained when the description or schema gains destructive or network content
 (for example "and delete the cache", "from an HTTP API endpoint"), or when the
-tool newly declares `destructiveHint: true` or `openWorldHint: true`. A description
-tweak that adds no such content does not fire.
+tool newly declares `destructiveHint: true` (while `readOnlyHint` is not `true`)
+or `openWorldHint: true`. A tool that declares both `readOnlyHint: true` and
+`destructiveHint: true` gains no `destructive` category from the hints, only the
+annotation-delta finding below. A description tweak that adds no such content
+does not fire.
 
 The separate HIGH annotation-delta finding has its own, asymmetric conditions.
 It fires when `destructiveHint` becomes `true` (from absent or not true), when
