@@ -1,24 +1,15 @@
 """Detector docs must describe what the detectors do.
 
 Each test reads a specific claim from a published detector doc and checks the
-detector against it. Each passes as soon as the doc and the code agree,
-whichever side changes. In all three cases the code looks deliberate (a code
-comment or a committed test backs it), so the likely fix is the doc.
+detector against it:
 
-- docs/ESCALATION-DETECTION.md, False-Positive Notes: "`destructive`/`network`
-  are never reported as gained". The same doc's MCP018 table lists
-  `destructive` (HIGH) and `network` (MEDIUM) as gained categories, and the
-  analyzer reports them when a description gains that content.
-- docs/SSRF-DETECTION.md, Tools: the fetch-verb roots listed include `http`
-  and `request`. src/mcp_audit/ssrf.py deliberately excludes both ("they
-  appear in most network tool descriptions").
-- docs/SHADOWING-DETECTION.md, MCP016: "Only fires when the canonical
-  normalised form is **not already an exact match** for any pair" followed by
-  "no double-reporting". tests/test_shadowing.py::
-  test_mixed_exact_and_cased_variant_keeps_third_server_visible requires
-  NORMALIZED alongside EXACT for such a group.
-
-These tests fail on current main. They document the drift; they do not fix it.
+- docs/ESCALATION-DETECTION.md: absent annotation hints add no category, and
+  `destructive`/`network` are reported as gained when content or a declared
+  hint adds them (the MCP018 table lists both as gained categories).
+- docs/SSRF-DETECTION.md: every listed fetch-verb root is a fetch verb, and
+  `http` and `request` are deliberately not.
+- docs/SHADOWING-DETECTION.md: a group mixing an exact pair with a case
+  variant on another server reports MCP015 and MCP016 together.
 """
 
 from __future__ import annotations
@@ -35,6 +26,7 @@ from mcp_audit.models import (
     ServerConfig,
     ShadowingKind,
     SsrfSeverity,
+    ToolAnnotations,
     ToolInfo,
     TransportType,
 )
@@ -49,39 +41,49 @@ def _doc(name: str) -> str:
     return " ".join((DOCS / name).read_text(encoding="utf-8").split())
 
 
-def test_escalation_never_gained_note_matches_analyzer() -> None:
-    if "`destructive`/`network` are never reported as gained" not in _doc("ESCALATION-DETECTION.md"):
-        return
-    probes = {
-        PermissionCategory.DESTRUCTIVE: " and delete the cache",
-        PermissionCategory.NETWORK: " from an HTTP API endpoint",
-    }
-    for category, suffix in probes.items():
-        findings = EscalationAnalyzer().analyze_server(
-            "srv",
-            [ToolInfo(name="w", description=WEATHER)],
-            [ToolInfo(name="w", description=WEATHER + suffix)],
-        )
-        gained = {c for f in findings if f.kind == EscalationKind.CAPABILITY for c in f.gained_categories}
-        assert category not in gained, f"doc says {category.value} is never gained; analyzer reported it"
+def _gained(current: ToolInfo) -> set[PermissionCategory]:
+    findings = EscalationAnalyzer().analyze_server(
+        "srv", [ToolInfo(name="w", description=WEATHER)], [current]
+    )
+    return {c for f in findings if f.kind == EscalationKind.CAPABILITY for c in f.gained_categories}
 
 
-def test_every_documented_fetch_verb_root_is_a_fetch_verb() -> None:
-    sentence = re.search(r"A \*\*fetch verb\*\* is detected when(.*?)\.\s", _doc("SSRF-DETECTION.md"))
+def test_escalation_doc_describes_destructive_and_network_gains() -> None:
+    doc = _doc("ESCALATION-DETECTION.md")
+    assert "never reported as gained" not in doc
+    assert "Absent annotation hints add no category" in doc
+    assert _gained(ToolInfo(name="w", description="Return the latest weather report")) == set()
+    assert PermissionCategory.DESTRUCTIVE in _gained(
+        ToolInfo(name="w", description=WEATHER + " and delete the cache")
+    )
+    assert PermissionCategory.NETWORK in _gained(
+        ToolInfo(name="w", description=WEATHER + " from an HTTP API endpoint")
+    )
+    declared = ToolInfo(name="w", description=WEATHER, annotations=ToolAnnotations(destructive_hint=True))
+    assert PermissionCategory.DESTRUCTIVE in _gained(declared)
+
+
+def _fetch_verb_finding(root: str) -> list[tuple[SsrfSeverity, str]]:
+    tool = ToolInfo(
+        name=f"{root}_target",
+        description="Takes a target.",
+        input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
+    )
+    return [(f.severity, f.pattern_name) for f in SsrfDetector().scan_server([tool], [])]
+
+
+def test_ssrf_doc_fetch_verb_roots_match_detector() -> None:
+    doc = _doc("SSRF-DETECTION.md")
+    sentence = re.search(r"A \*\*fetch verb\*\* is detected when(.*?)\.\s", doc)
     assert sentence is not None
     roots = re.findall(r"`([a-z]+)`", sentence.group(1))
     assert roots
-    missing = []
-    for root in roots:
-        tool = ToolInfo(
-            name=f"{root}_target",
-            description="Takes a target.",
-            input_schema={"type": "object", "properties": {"url": {"type": "string"}}},
-        )
-        found = [(f.severity, f.pattern_name) for f in SsrfDetector().scan_server([tool], [])]
-        if found != [(SsrfSeverity.HIGH, "url_param_with_fetch_verb")]:
-            missing.append(root)
-    assert missing == [], f"documented fetch-verb roots not treated as fetch verbs: {missing}"
+    high = [(SsrfSeverity.HIGH, "url_param_with_fetch_verb")]
+    assert [root for root in roots if _fetch_verb_finding(root) != high] == []
+    assert "`http` and `request` are deliberately not fetch verbs" in doc
+    for root in ("http", "request"):
+        assert root not in roots
+        assert _fetch_verb_finding(root) == [(SsrfSeverity.MEDIUM, "url_param")]
 
 
 def _audit(server: str, tools: list[str]) -> ServerAudit:
@@ -99,12 +101,13 @@ def _audit(server: str, tools: list[str]) -> ServerAudit:
     )
 
 
-def test_normalized_no_double_reporting_claim_matches_analyzer() -> None:
-    if "no double-reporting" not in _doc("SHADOWING-DETECTION.md"):
-        return
-    findings = ShadowingAnalyzer().analyze_fleet(
+def test_shadowing_doc_describes_exact_pair_plus_variant() -> None:
+    doc = _doc("SHADOWING-DETECTION.md")
+    assert "no double-reporting" not in doc
+    assert "MCP016 **also** fires for the full group" in doc
+    mixed = ShadowingAnalyzer().analyze_fleet(
         [_audit("srv-a", ["delete"]), _audit("srv-b", ["delete"]), _audit("srv-c", ["Delete"])]
     )
-    kinds = {f.kind for f in findings}
-    assert ShadowingKind.EXACT in kinds
-    assert ShadowingKind.NORMALIZED not in kinds, "doc promises no double-reporting; got EXACT and NORMALIZED"
+    assert {f.kind for f in mixed} == {ShadowingKind.EXACT, ShadowingKind.NORMALIZED}
+    exact_only = ShadowingAnalyzer().analyze_fleet([_audit("srv-a", ["delete"]), _audit("srv-b", ["delete"])])
+    assert {f.kind for f in exact_only} == {ShadowingKind.EXACT}
