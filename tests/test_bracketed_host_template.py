@@ -1,6 +1,6 @@
 """A bracketed host template in a resource URI must not blind the audit.
 
-Two documented behaviors fail today for a resource such as `http://[{host}]/x`:
+Two documented behaviors used to fail for a resource such as `http://[{host}]/x`:
 
 1. tests/test_ssrf.py::test_resource_malformed_bracketed_authority_does_not_crash
    records the intent "malformed authority must not crash the scan". The SSRF
@@ -16,9 +16,8 @@ Two documented behaviors fail today for a resource such as `http://[{host}]/x`:
    expands to an IPv6 literal such as ::1), and none of the documented
    exclusions apply, yet the SSRF detector returns no finding.
 
-These tests fail on current main. They document the defects; they do not fix
-them. Note that test_resource_malformed_bracketed_authority_does_not_crash pins
-the empty SSRF result and would change with a fix for (2).
+Both are fixed by splitting such URIs leniently (ssrf.split_uri) instead of
+failing or skipping them.
 """
 
 from __future__ import annotations
