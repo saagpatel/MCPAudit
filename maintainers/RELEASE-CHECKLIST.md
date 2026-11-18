@@ -458,6 +458,46 @@ review, rebuild all six artifacts and repeat the full approval and verification
 gates. Record the abandoned version and link the recovery release in its notes.
 Neither a yank nor a retry establishes a complete release by itself.
 
+## Supply-Chain Evidence
+
+Every `publish.yml` run adds three checks to the release train without
+changing the six-file contract:
+
+- **Reproducible build.** After `Verify built distributions`, the build job
+  rebuilds all three distributions serially from a fresh clone of the approved
+  commit (`scripts/check_reproducible_build.py --reference dist`) and stops
+  unless all six SHA-256 digests match. This catches path leaks, timestamp
+  drift and a dirty build-provenance stamp, such as the parallel-build race
+  fixed in #381 and #385. Run the same check locally on a clean checkout:
+
+  ```sh
+  python scripts/check_reproducible_build.py --build \
+    'for p in mcp-audits mcp-audits-labs mcp-audits-proof; do uv build --package "$p" --no-create-gitignore --out-dir {out} --build-constraints build-constraints.txt || exit 1; done'
+  ```
+
+- **SBOMs.** The build job writes one CycloneDX 1.5 SBOM per distribution
+  from `uv.lock` (`uv export --format cyclonedx1.5 --no-dev --all-extras
+  --package <name>`) and uploads them with the reproducibility report as the
+  `mcp-audits-<version>-supply-chain` artifact.
+- **GitHub attestations.** Inside the `pypi`-environment publish job, after
+  `--publication-check artifacts` has matched the retained bytes to the
+  approved manifest and before the first upload, `actions/attest` signs SLSA
+  build provenance for the six files and one SBOM attestation per
+  distribution. Dry runs never attest. A resume skips attestation because the
+  original run attested before its first upload; a release first attempted
+  before this workflow landed has no GitHub attestations to recover.
+
+PyPI's PEP 740 publish attestations are unchanged (`attestations: true`).
+Verify a published release with:
+
+```sh
+uvx pypi-attestations verify pypi --repository https://github.com/saagpatel/MCPAudit \
+  pypi:mcp_audits-X.Y.Z-py3-none-any.whl
+gh attestation verify mcp_audits-X.Y.Z-py3-none-any.whl --repo saagpatel/MCPAudit
+gh attestation verify mcp_audits-X.Y.Z-py3-none-any.whl --repo saagpatel/MCPAudit \
+  --predicate-type https://cyclonedx.org/bom
+```
+
 ## `release/2.x` Security Maintenance
 
 `release/2.x` was cut from the last supported 2.x release commit before 3.0

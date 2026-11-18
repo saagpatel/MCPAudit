@@ -221,6 +221,35 @@ jobs:
           echo "manifest SHA-256: $digest"
           python -c 'import os; print("workflow_sha=" + os.environ["WORKFLOW_SHA"]); print("source_commit=" + os.environ["RELEASE_COMMIT"])'
 
+      - name: Reproducible-build check (rebuild from a fresh clone, compare SHA-256)
+        working-directory: release-source
+        env:
+          CONSTRAINTS: ${{ github.workspace }}/release-controls/build-constraints.txt
+          # Same serial per-package build as above; {out} is the checker's fresh output dir.
+          REBUILD: >-
+            for p in mcp-audits mcp-audits-labs mcp-audits-proof; do
+            uv build --package "$p" --no-create-gitignore --out-dir {out}
+            --build-constraints "$CONSTRAINTS" || exit 1; done
+        # A second, serial build of the approved commit in a fresh clone must match the six
+        # files above byte for byte; any drift (paths, timestamps, a dirty provenance stamp)
+        # stops the release before smoke or upload.
+        run: |
+          mkdir -p "$RUNNER_TEMP/supply-chain"
+          python ../release-controls/scripts/check_reproducible_build.py --reference dist \
+            --report "$RUNNER_TEMP/supply-chain/reproducible-build.json" \
+            --build "$REBUILD"
+
+      - name: Generate CycloneDX SBOMs from the locked runtime dependencies
+        working-directory: release-source
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          for package in mcp-audits mcp-audits-labs mcp-audits-proof; do
+            uv export --preview-features sbom-export --format cyclonedx1.5 --locked --no-dev \
+              --all-extras --package "$package" \
+              --output-file "$RUNNER_TEMP/supply-chain/$package-$RELEASE_VERSION.cdx.json"
+          done
+
       - name: Stage the six verified files
         env:
           RELEASE_VERSION: ${{ inputs.version }}
@@ -242,6 +271,18 @@ jobs:
             ${{ runner.temp }}/candidate/dist/mcp_audits_proof-${{ inputs.version }}-py3-none-any.whl
             ${{ runner.temp }}/candidate/dist/mcp_audits_proof-${{ inputs.version }}.tar.gz
             ${{ runner.temp }}/candidate/release-manifest.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload supply-chain evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mcp-audits-${{ inputs.version }}-supply-chain
+          path: |
+            ${{ runner.temp }}/supply-chain/reproducible-build.json
+            ${{ runner.temp }}/supply-chain/mcp-audits-${{ inputs.version }}.cdx.json
+            ${{ runner.temp }}/supply-chain/mcp-audits-labs-${{ inputs.version }}.cdx.json
+            ${{ runner.temp }}/supply-chain/mcp-audits-proof-${{ inputs.version }}.cdx.json
           if-no-files-found: error
           retention-days: 90
 
@@ -443,7 +484,8 @@ jobs:
     permissions:
       actions: read
       contents: read
-      id-token: write  # OIDC trusted publishing
+      id-token: write  # OIDC trusted publishing and Sigstore signing
+      attestations: write  # GitHub build provenance and SBOM attestations
 
     steps:
       - name: Checkout trusted publication controls
@@ -512,6 +554,57 @@ jobs:
           python scripts/release_publish.py stage "${args[@]}" --distributions release/distributions.json \
             --version "$RELEASE_VERSION" --commit "$RELEASE_COMMIT" --control-sha "$CONTROL_SHA" \
             --manifest-sha256 "$MANIFEST_SHA256"
+
+      # Attest the exact bytes that verify_release.py just matched to the approved manifest,
+      # before any upload. A resume skips this: the original run attested before its uploads.
+      - name: Download retained supply-chain evidence
+        if: ${{ !inputs.resume }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mcp-audits-${{ inputs.version }}-supply-chain
+          path: supply-chain/
+          run-id: ${{ needs.validate-dispatch-ref.outputs.run-id }}
+          github-token: ${{ github.token }}
+      - name: Attest SLSA build provenance for the six verified files
+        if: ${{ !inputs.resume }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release/dist/mcp_audits-${{ inputs.version }}-py3-none-any.whl
+            release/dist/mcp_audits-${{ inputs.version }}.tar.gz
+            release/dist/mcp_audits_labs-${{ inputs.version }}-py3-none-any.whl
+            release/dist/mcp_audits_labs-${{ inputs.version }}.tar.gz
+            release/dist/mcp_audits_proof-${{ inputs.version }}-py3-none-any.whl
+            release/dist/mcp_audits_proof-${{ inputs.version }}.tar.gz
+          # Storage records need an organization-owned repository.
+          create-storage-record: false
+      - name: Attest mcp-audits SBOM
+        if: ${{ !inputs.resume }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release/dist/mcp_audits-${{ inputs.version }}-py3-none-any.whl
+            release/dist/mcp_audits-${{ inputs.version }}.tar.gz
+          sbom-path: supply-chain/mcp-audits-${{ inputs.version }}.cdx.json
+          create-storage-record: false
+      - name: Attest mcp-audits-labs SBOM
+        if: ${{ !inputs.resume }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release/dist/mcp_audits_labs-${{ inputs.version }}-py3-none-any.whl
+            release/dist/mcp_audits_labs-${{ inputs.version }}.tar.gz
+          sbom-path: supply-chain/mcp-audits-labs-${{ inputs.version }}.cdx.json
+          create-storage-record: false
+      - name: Attest mcp-audits-proof SBOM
+        if: ${{ !inputs.resume }}
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            release/dist/mcp_audits_proof-${{ inputs.version }}-py3-none-any.whl
+            release/dist/mcp_audits_proof-${{ inputs.version }}.tar.gz
+          sbom-path: supply-chain/mcp-audits-proof-${{ inputs.version }}.cdx.json
+          create-storage-record: false
 
       - name: Publish mcp-audits
         if: steps.stage.outputs.mcp-audits == 'true'

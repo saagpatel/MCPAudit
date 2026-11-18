@@ -11,6 +11,7 @@ FULL_COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 # Resolved from the named releases in each action's owning GitHub repository.
 # Changing any row is an explicit supply-chain review event, not a shape-only update.
 REVIEWED_ACTION_RELEASES = {
+    "actions/attest": ("1e69f48acb82d1966a394da916b4c1698aa569d6", "v4.2.2"),
     "actions/checkout": ("3d3c42e5aac5ba805825da76410c181273ba90b1", "v7.0.1"),
     "actions/download-artifact": ("9000827ccba6bdab643e8b6fd33ac0654aef8333", "v8.0.2"),
     "actions/setup-python": ("6d4fd22b20465ccc0f7354476588e8df7c9ca0e0", "v7.1.0"),
