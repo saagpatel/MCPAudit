@@ -63,6 +63,29 @@ def test_escalation_doc_describes_destructive_and_network_gains() -> None:
     assert PermissionCategory.DESTRUCTIVE in _gained(declared)
 
 
+def _kinds(baseline: ToolAnnotations | None, current: ToolAnnotations | None) -> set[tuple[str, str]]:
+    findings = EscalationAnalyzer().analyze_server(
+        "srv",
+        [ToolInfo(name="w", description=WEATHER, annotations=baseline)],
+        [ToolInfo(name="w", description=WEATHER, annotations=current)],
+    )
+    return {(f.kind.value, f.severity.value) for f in findings}
+
+
+def test_escalation_doc_describes_annotation_delta_conditions() -> None:
+    doc = _doc("ESCALATION-DETECTION.md")
+    assert "gives only the MEDIUM `network` capability finding" in doc
+    delta = ("annotation_delta", "high")
+    assert _kinds(None, ToolAnnotations(destructive_hint=True)) == {delta, ("capability", "high")}
+    assert _kinds(None, ToolAnnotations(open_world_hint=True)) == {("capability", "medium")}
+    assert _kinds(ToolAnnotations(open_world_hint=False), ToolAnnotations(open_world_hint=True)) == {
+        delta,
+        ("capability", "medium"),
+    }
+    assert _kinds(ToolAnnotations(open_world_hint=False), ToolAnnotations()) == {delta}
+    assert _kinds(ToolAnnotations(read_only_hint=True), ToolAnnotations()) >= {delta}
+
+
 def _fetch_verb_finding(root: str) -> list[tuple[SsrfSeverity, str]]:
     tool = ToolInfo(
         name=f"{root}_target",
