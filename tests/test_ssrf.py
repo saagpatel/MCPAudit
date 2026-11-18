@@ -20,6 +20,7 @@ from mcp_audit.ssrf import (
     filter_allowlisted_ssrf,
     host_in_allowlist,
     parse_host_allowlist,
+    split_uri,
 )
 from mcp_audit.text_limits import MAX_FIELD_BYTES
 
@@ -739,5 +740,30 @@ def test_resource_userinfo_with_host_template_is_still_high() -> None:
 
 def test_resource_malformed_bracketed_authority_does_not_crash() -> None:
     detector = SsrfDetector()
-    # Bracketed non-IP host raises ValueError in urlparse on Python 3.14+.
-    assert detector.scan_resource(ResourceInfo(uri="https://[{host}]/x")) == []
+    # Bracketed non-IP host raises ValueError in urlparse on Python 3.14+; the
+    # lenient split still sees the templated host, so the scan flags it.
+    findings = detector.scan_resource(ResourceInfo(uri="https://[{host}]/x"))
+    assert [(f.severity, f.pattern_name) for f in findings] == [
+        (SsrfSeverity.HIGH, "remote_uri_host_template")
+    ]
+    # A malformed authority with no template is not an SSRF signal.
+    assert detector.scan_resource(ResourceInfo(uri="http://[::1/x")) == []
+
+
+def test_split_uri_matches_urlparse_and_survives_malformed_authorities() -> None:
+    normal = split_uri("https://user@Example.com:8443/a/b?q=1#f")
+    assert (normal.scheme, normal.netloc, normal.path, normal.query, normal.hostname) == (
+        "https",
+        "user@Example.com:8443",
+        "/a/b",
+        "q=1",
+        "example.com",
+    )
+    for uri, hostname in (
+        ("http://[{host}]/x", "{host}"),
+        ("https://[{h}]:{p}/x", "{h}"),
+        ("http://[::1/x", "::1"),
+    ):
+        parts = split_uri(uri)
+        assert parts.scheme in {"http", "https"}
+        assert parts.hostname == hostname

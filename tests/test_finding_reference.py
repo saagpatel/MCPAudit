@@ -170,9 +170,13 @@ async def test_cli_finding_five_before_and_after() -> None:
 
 
 @pytest.mark.anyio
-async def test_source_labels_and_references_across_core_outputs() -> None:
-    report = await run_scan(ScanOptions(extra_config=str(SYNTHETIC), config_only=True, skip_connect=True))
-    source = review_sources(SYNTHETIC)
+async def test_source_labels_and_references_across_core_outputs(tmp_path: Path) -> None:
+    # Copy under a fake home so the redaction check holds wherever the clone lives.
+    config = tmp_path / "Users" / "tester" / SYNTHETIC.name
+    config.parent.mkdir(parents=True)
+    config.write_bytes(SYNTHETIC.read_bytes())
+    report = await run_scan(ScanOptions(extra_config=str(config), config_only=True, skip_connect=True))
+    source = review_sources(config)
     assert all(server.config_source == SOURCE_LABEL for server in source.servers)
     assert all(server.client == ClientType.CLAUDE_CODE for server in source.servers)
     payload = report.model_dump(mode="json")
@@ -188,8 +192,8 @@ async def test_source_labels_and_references_across_core_outputs() -> None:
     html = HtmlReportGenerator().generate(report)
     shown = HtmlReportGenerator().generate(report, show_host=True)
     # Default HTML hides home-directory identifiers; --show-host keeps the raw path.
-    assert escape(redact_identifiers(str(SYNTHETIC))) in html and str(SYNTHETIC) not in html
-    assert str(SYNTHETIC) in shown
+    assert escape(redact_identifiers(str(config))) in html and str(config) not in html
+    assert str(config) in shown
     for rendered in (terminal, html):
         assert SOURCE_LABEL in rendered
         for view in finding_views(report):
