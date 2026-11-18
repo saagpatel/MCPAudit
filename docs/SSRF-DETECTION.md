@@ -28,9 +28,11 @@ A parameter is treated as a weaker **host/address** input when its name contains
 host token (`host`, `hostname`, `domain`, `ip`, `proxy`, `upstream`).
 
 A **fetch verb** is detected when the tool name or description contains a
-server-side request root such as `fetch`, `http`, `curl`, `wget`, `download`,
-`proxy`, `crawl`, `scrape`, `ping`, `probe`, `resolve`, `request`, `retrieve`,
-or `visit`.
+server-side request root such as `fetch`, `curl`, `wget`, `download`,
+`proxy`, `crawl`, `scrape`, `ping`, `probe`, `resolve`, `retrieve`, or `visit`.
+`http` and `request` are deliberately not fetch verbs: they appear in most
+network tool descriptions and would raise nearly every URL-parameter finding to
+high.
 
 At most one finding is emitted per tool, at the highest applicable severity:
 
