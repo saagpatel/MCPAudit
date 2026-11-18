@@ -4,7 +4,6 @@ import re
 from collections.abc import Callable
 from contextvars import ContextVar
 from functools import cache, lru_cache
-from urllib.parse import urlparse
 
 from mcp_audit.agent_text import AgentText, agent_visible_text
 from mcp_audit.models import (
@@ -20,7 +19,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.redaction import redacted_excerpt
 from mcp_audit.rules.patterns import PERMISSION_PATTERNS
-from mcp_audit.ssrf import _iter_schema_properties
+from mcp_audit.ssrf import _iter_schema_properties, split_uri
 from mcp_audit.text_limits import bounded_text
 
 # Keyword strength → score contribution per match (multiplied by source weight later)
@@ -201,9 +200,11 @@ class PermissionAnalyzer:
         return self._capability_findings(CapabilityTarget.PROMPT, prompt.name, sources)
 
     def analyze_resource(self, resource: ResourceInfo) -> list[CapabilityFinding]:
-        parsed = urlparse(resource.uri)
+        # Resource URIs are untrusted: split_uri never raises, so a malformed
+        # authority cannot fail the whole server audit.
+        parsed = split_uri(resource.uri)
         scheme = parsed.scheme.lower()
-        host = parsed.hostname or ""
+        host = parsed.hostname
         path = parsed.path or ""
         sources: list[tuple[str, int]] = [
             (resource.uri, 3),
@@ -230,7 +231,7 @@ class PermissionAnalyzer:
             evidence = [f"resource URI scheme '{scheme}'"]
             if host:
                 safe_uri = redacted_excerpt(resource.uri, 0, len(resource.uri))
-                safe_host = urlparse(safe_uri).hostname or ""
+                safe_host = split_uri(safe_uri).hostname
                 evidence.append(f"resource host '{safe_host}'")
             existing_network = next(
                 (finding for finding in findings if finding.category == PermissionCategory.NETWORK),
