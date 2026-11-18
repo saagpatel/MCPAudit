@@ -159,3 +159,37 @@ def test_pointer_index_ignores_instance_payloads(payload_key: str, payload: obje
         walk = _iter_schema_properties(schema, pointer_paths=pointer_paths)
         assert walk.incomplete_reasons == []
         assert [name for _, name, _ in walk.properties] == ["t", "url"]
+
+
+def _peak_bytes(build: Any) -> int:
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        build()
+        return tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+
+@pytest.mark.parametrize(
+    "wide_def",
+    [
+        {"allOf": [True] * 100_000},
+        {"anyOf": [False] * 100_000},
+        {"items": [True] * 100_000},
+        {"properties": {f"p{i}": True for i in range(100_000)}},
+    ],
+    ids=["allOf-booleans", "anyOf-booleans", "legacy-items-booleans", "properties-booleans"],
+)
+def test_pointer_index_bounds_allocation_on_wide_containers(wide_def: dict[str, Any]) -> None:
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"t": {"$ref": "#node"}},
+        "$defs": {"wide": wide_def, "n": {"$anchor": "node", **URL_DEF}},
+    }
+    index: dict[int, str] = {}
+    peak = _peak_bytes(lambda: index.update(_schema_pointer_index(schema)))
+    # The round-3 version allocated about 12 MB here; the lazy walk stays far below 1 MB.
+    assert peak < 512 * 1024, peak
+    assert len(index) <= 8

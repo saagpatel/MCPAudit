@@ -9,6 +9,7 @@ metadata endpoints) — not that the server is exploitable.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -163,15 +164,21 @@ def _resolve_local_ref(root: dict[str, object], ref: str) -> dict[str, object] |
 
 
 _MAX_POINTER_CHARS = 4_096
+# Child slots (including non-object values such as boolean schemas) examined
+# across one index build. Bounds time and work on wide containers.
+_MAX_POINTER_INDEX_SLOTS = 8 * _MAX_SCHEMA_NODES
 
 
 def _schema_pointer_index(root: dict[str, object]) -> dict[int, str]:
     """Map schema objects inside ``root`` to their escaped JSON Pointers.
 
     Follows only schema-bearing keywords (never instance payloads such as
-    ``examples`` or ``default``) and checks the node, depth and pointer-length
-    budgets before every insertion. A schema object outside the budget gets no
-    pointer, which callers report as an unresolved reference.
+    ``examples`` or ``default``). Children are visited lazily, one slot at a
+    time: non-object values are skipped before anything is built, the slot,
+    node, depth and pointer-length budgets are checked before a child's
+    pointer is constructed, and no per-node children list is materialised. A
+    schema object outside the budget gets no pointer, which callers report as
+    an unresolved reference.
     """
     # Imported here because schema_rules imports this module.
     from mcp_audit.schema_rules import (
@@ -183,35 +190,45 @@ def _schema_pointer_index(root: dict[str, object]) -> dict[int, str]:
     def escape(token: object) -> str:
         return str(token).replace("~", "~0").replace("/", "~1")
 
+    def child_slots(node: dict[str, object]) -> Iterator[tuple[str, object, object]]:
+        """Yield (keyword, key or index or None, child) lazily."""
+        for keyword in (*_SCHEMA_MAP_KEYWORDS, "$defs", "definitions"):
+            members = node.get(keyword)
+            if isinstance(members, dict):
+                for key, child in members.items():
+                    yield keyword, key, child
+        for keyword in _SCHEMA_ARRAY_KEYWORDS:
+            members = node.get(keyword)
+            if isinstance(members, list):
+                for position, child in enumerate(members):
+                    yield keyword, position, child
+        for keyword in _SINGLE_SCHEMA_KEYWORDS:
+            yield keyword, None, node.get(keyword)
+        items = node.get("items")
+        if isinstance(items, list):
+            for position, child in enumerate(items):
+                yield "items", position, child
+
     index: dict[int, str] = {id(root): ""}
     stack: list[tuple[dict[str, object], str, int]] = [(root, "", 0)]
+    slots = 0
     while stack:
         node, pointer, depth = stack.pop()
         if depth >= _MAX_SCHEMA_DEPTH:
             continue
-        children: list[tuple[str, object]] = []
-        for keyword in (*_SCHEMA_MAP_KEYWORDS, "$defs", "definitions"):
-            members = node.get(keyword)
-            if isinstance(members, dict):
-                children.extend(
-                    (f"/{escape(keyword)}/{escape(key)}", child) for key, child in members.items()
-                )
-        for keyword in _SCHEMA_ARRAY_KEYWORDS:
-            members = node.get(keyword)
-            if isinstance(members, list):
-                children.extend((f"/{keyword}/{i}", child) for i, child in enumerate(members))
-        for keyword in _SINGLE_SCHEMA_KEYWORDS:
-            children.append((f"/{keyword}", node.get(keyword)))
-        items = node.get("items")
-        if isinstance(items, list):
-            children.extend((f"/items/{i}", child) for i, child in enumerate(items))
-        for suffix, child in children:
+        for keyword, key, child in child_slots(node):
+            slots += 1
+            if slots > _MAX_POINTER_INDEX_SLOTS:
+                return index
             if not isinstance(child, dict) or id(child) in index:
                 continue
             if len(index) >= _MAX_SCHEMA_NODES:
                 return index
-            child_pointer = pointer + suffix
-            if len(child_pointer) > _MAX_POINTER_CHARS:
+            suffix_length = len(keyword) + 1 + (len(str(key)) + 1 if key is not None else 0)
+            if len(pointer) + suffix_length > _MAX_POINTER_CHARS:
+                continue
+            child_pointer = f"{pointer}/{keyword}" if key is None else f"{pointer}/{keyword}/{escape(key)}"
+            if len(child_pointer) > _MAX_POINTER_CHARS:  # escaping can lengthen the key
                 continue
             index[id(child)] = child_pointer
             stack.append((child, child_pointer, depth + 1))
