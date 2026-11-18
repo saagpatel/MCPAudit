@@ -29,9 +29,12 @@ REVIEWED_ACTION_RELEASES = {
     ),
     "ossf/scorecard-action": ("fa7117db83c52d787ae5a89f350999701505d78e", "v2.5.0"),
     "pypa/gh-action-pypi-publish": ("7245906fb61fa33a13554f9d5fb856fe61758086", "v1.14.3"),
+    # Untagged main commit after v0.5.0: v0.5.0 pins its own setup-python and
+    # upload-sarif by tag, which repository SHA-pinning enforcement rejects. This
+    # commit pins both by SHA and keeps the action inputs unchanged.
     "saagpatel/agent-permission-diff-bot": (
-        "20bc07d1f8052765d3a65378222a08869a7dd027",
-        "v0.5.0",
+        "4d630ab9267a83f9499c633d37dcf5f0f2f0b74c",
+        "main-2026-11-18",
     ),
 }
 
