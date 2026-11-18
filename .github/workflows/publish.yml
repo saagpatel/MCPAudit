@@ -556,19 +556,28 @@ jobs:
             --manifest-sha256 "$MANIFEST_SHA256"
 
       # Attest the exact bytes that verify_release.py just matched to the approved manifest,
-      # before any upload. A resume skips this: the original run attested before its uploads.
+      # before any upload. Every publishing run attests, resumes included: a resume can follow a
+      # dry run (which never attests) or an original run that stopped during attestation, and a
+      # duplicate attestation of the same digests is harmless. A run without the retained
+      # supply-chain artifact fails here rather than publishing without evidence.
       - name: Download retained supply-chain evidence
-        if: ${{ !inputs.resume }}
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: mcp-audits-${{ inputs.version }}-supply-chain
           path: supply-chain/
           run-id: ${{ needs.validate-dispatch-ref.outputs.run-id }}
           github-token: ${{ github.token }}
+      - name: Write provenance binding the approved release commit
+        env:
+          BUILD_RUN_ID: ${{ needs.validate-dispatch-ref.outputs.run-id }}
+        run: python scripts/release_provenance.py --output "$RUNNER_TEMP/release-provenance.json"
       - name: Attest SLSA build provenance for the six verified files
-        if: ${{ !inputs.resume }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
+          # Explicit predicate: the default records only github.sha (the controls commit),
+          # not inputs.commit, which the files were built from.
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: ${{ runner.temp }}/release-provenance.json
           subject-path: |
             release/dist/mcp_audits-${{ inputs.version }}-py3-none-any.whl
             release/dist/mcp_audits-${{ inputs.version }}.tar.gz
@@ -579,7 +588,6 @@ jobs:
           # Storage records need an organization-owned repository.
           create-storage-record: false
       - name: Attest mcp-audits SBOM
-        if: ${{ !inputs.resume }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
@@ -588,7 +596,6 @@ jobs:
           sbom-path: supply-chain/mcp-audits-${{ inputs.version }}.cdx.json
           create-storage-record: false
       - name: Attest mcp-audits-labs SBOM
-        if: ${{ !inputs.resume }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |
@@ -597,7 +604,6 @@ jobs:
           sbom-path: supply-chain/mcp-audits-labs-${{ inputs.version }}.cdx.json
           create-storage-record: false
       - name: Attest mcp-audits-proof SBOM
-        if: ${{ !inputs.resume }}
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: |

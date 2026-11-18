@@ -480,12 +480,18 @@ changing the six-file contract:
   --package <name>`) and uploads them with the reproducibility report as the
   `mcp-audits-<version>-supply-chain` artifact.
 - **GitHub attestations.** Inside the `pypi`-environment publish job, after
-  `--publication-check artifacts` has matched the retained bytes to the
-  approved manifest and before the first upload, `actions/attest` signs SLSA
-  build provenance for the six files and one SBOM attestation per
-  distribution. Dry runs never attest. A resume skips attestation because the
-  original run attested before its first upload; a release first attempted
-  before this workflow landed has no GitHub attestations to recover.
+  `--publication-check artifacts` has matched the retained bytes to the approved
+  manifest and before the first upload, `actions/attest` signs SLSA v1 build
+  provenance for the six files and one SBOM attestation per distribution.
+  The provenance predicate is written by `scripts/release_provenance.py` and
+  names the approved release commit (`release-source`) and the controls commit
+  (`release-controls`) as separate resolved dependencies, plus the approved
+  manifest digest and the run that built the bytes; the action's default would
+  record only `github.sha`. Dry runs never attest. Every publishing run,
+  resumes included, attests: a resume can follow a dry run or an original run
+  that stopped during attestation, and re-attesting the same digests is
+  harmless. A resume whose original run predates this workflow has no
+  supply-chain artifact and stops before upload.
 
 PyPI's PEP 740 publish attestations are unchanged (`attestations: true`).
 Verify a published release with:

@@ -743,7 +743,8 @@ def test_workflow_readback_wait_is_bounded() -> None:
 
 def test_supply_chain_evidence_binds_the_verified_bytes() -> None:
     """Reproducibility and SBOMs run in the read-only build; attestations sign the exact
-    verified files inside the reviewer-gated publish job, before any upload."""
+    verified files inside the reviewer-gated publish job, before any upload, on every
+    publishing run including resumes."""
     workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text())
     jobs = workflow["jobs"]
     build = jobs["build"]["steps"]
@@ -776,12 +777,25 @@ def test_supply_chain_evidence_binds_the_verified_bytes() -> None:
     attests = [i for i, step in enumerate(steps) if step.get("uses", "").startswith("actions/attest@")]
     assert len(attests) == 1 + len(TRAIN)
     assert all(stage < i < first_upload for i in attests)
+    evidence = next(
+        i for i, step in enumerate(steps) if step.get("name") == "Download retained supply-chain evidence"
+    )
+    predicate = next(i for i, step in enumerate(steps) if "release_provenance.py" in step.get("run", ""))
+    assert stage < evidence < predicate < attests[0]
+    assert steps[evidence]["with"]["run-id"] == "${{ needs.validate-dispatch-ref.outputs.run-id }}"
+    assert steps[predicate]["env"]["BUILD_RUN_ID"] == "${{ needs.validate-dispatch-ref.outputs.run-id }}"
+    for i in (evidence, predicate, *attests):
+        # A resume can follow a dry run, which never attested, so no evidence step may skip it.
+        assert "if" not in steps[i]
     for i in attests:
-        assert steps[i]["if"] == "${{ !inputs.resume }}"
         assert steps[i]["with"]["create-storage-record"] is False
         assert "*" not in steps[i]["with"]["subject-path"]
-    assert len(steps[attests[0]]["with"]["subject-path"].splitlines()) == 2 * len(TRAIN)
-    assert "sbom-path" not in steps[attests[0]]["with"]
+    provenance = steps[attests[0]]["with"]
+    assert len(provenance["subject-path"].splitlines()) == 2 * len(TRAIN)
+    assert provenance["predicate-type"] == "https://slsa.dev/provenance/v1"
+    assert provenance["predicate-path"] == "${{ runner.temp }}/release-provenance.json"
+    assert "sbom-path" not in provenance
+    assert {"RELEASE_COMMIT", "CONTROL_SHA", "MANIFEST_SHA256", "RELEASE_VERSION"} <= set(publish_job["env"])
     assert all("sbom-path" in steps[i]["with"] for i in attests[1:])
     for job_name in ("build", "consumer-smoke", "resume", "validate-dispatch-ref"):
         assert "attestations" not in jobs[job_name].get("permissions", {})
