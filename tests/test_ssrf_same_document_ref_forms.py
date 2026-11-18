@@ -24,7 +24,7 @@ import pytest
 
 from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import SsrfSeverity, ToolInfo
-from mcp_audit.ssrf import SsrfDetector
+from mcp_audit.ssrf import SsrfDetector, _iter_schema_properties, _schema_pointer_index
 
 URL_DEF: dict[str, Any] = {"type": "object", "properties": {"url": {"type": "string"}}}
 
@@ -124,3 +124,38 @@ def test_resolved_refs_give_canonical_field_paths_and_count_once(
     for _, _, paths in found:
         assert all(path.endswith("/properties/shell_command") for path in paths)
         assert len(paths) == len(set(paths))
+
+
+def _anchored_schema_with_payload(payload_key: str, payload: object) -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {"t": {"$ref": "#node"}},
+        "$defs": {"n": {"$anchor": "node", **URL_DEF}},
+        payload_key: payload,
+    }
+
+
+def _deep_default(levels: int, key_length: int) -> dict[str, Any]:
+    node: dict[str, Any] = {}
+    for _ in range(levels):
+        node = {"k" * key_length: node}
+    return node
+
+
+@pytest.mark.parametrize(
+    ("payload_key", "payload"),
+    [
+        ("examples", [{} for _ in range(100_000)]),
+        ("default", _deep_default(400, 2_048)),
+    ],
+    ids=["wide-examples", "deep-default"],
+)
+def test_pointer_index_ignores_instance_payloads(payload_key: str, payload: object) -> None:
+    schema = _anchored_schema_with_payload(payload_key, payload)
+    index = _schema_pointer_index(schema)
+    assert len(index) <= 4
+    assert max(len(pointer) for pointer in index.values()) < 64
+    for pointer_paths in (False, True):
+        walk = _iter_schema_properties(schema, pointer_paths=pointer_paths)
+        assert walk.incomplete_reasons == []
+        assert [name for _, name, _ in walk.properties] == ["t", "url"]

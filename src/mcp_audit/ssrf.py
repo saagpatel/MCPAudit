@@ -162,24 +162,59 @@ def _resolve_local_ref(root: dict[str, object], ref: str) -> dict[str, object] |
     return current if isinstance(current, dict) else None
 
 
-def _schema_pointer_index(root: dict[str, object]) -> dict[int, str]:
-    """Map each object or array inside ``root`` to its first escaped JSON Pointer.
+_MAX_POINTER_CHARS = 4_096
 
-    Bounded by the schema node budget; a container beyond it gets no pointer,
-    which callers treat as an unresolved reference.
+
+def _schema_pointer_index(root: dict[str, object]) -> dict[int, str]:
+    """Map schema objects inside ``root`` to their escaped JSON Pointers.
+
+    Follows only schema-bearing keywords (never instance payloads such as
+    ``examples`` or ``default``) and checks the node, depth and pointer-length
+    budgets before every insertion. A schema object outside the budget gets no
+    pointer, which callers report as an unresolved reference.
     """
+    # Imported here because schema_rules imports this module.
+    from mcp_audit.schema_rules import (
+        _SCHEMA_ARRAY_KEYWORDS,
+        _SCHEMA_MAP_KEYWORDS,
+        _SINGLE_SCHEMA_KEYWORDS,
+    )
+
+    def escape(token: object) -> str:
+        return str(token).replace("~", "~0").replace("/", "~1")
+
     index: dict[int, str] = {id(root): ""}
-    stack: list[tuple[object, str]] = [(root, "")]
-    while stack and len(index) < 4 * _MAX_SCHEMA_NODES:
-        node, pointer = stack.pop()
-        children = (
-            node.items() if isinstance(node, dict) else enumerate(node) if isinstance(node, list) else ()
-        )
-        for key, child in children:
-            if isinstance(child, (dict, list)) and id(child) not in index:
-                child_pointer = f"{pointer}/{str(key).replace('~', '~0').replace('/', '~1')}"
-                index[id(child)] = child_pointer
-                stack.append((child, child_pointer))
+    stack: list[tuple[dict[str, object], str, int]] = [(root, "", 0)]
+    while stack:
+        node, pointer, depth = stack.pop()
+        if depth >= _MAX_SCHEMA_DEPTH:
+            continue
+        children: list[tuple[str, object]] = []
+        for keyword in (*_SCHEMA_MAP_KEYWORDS, "$defs", "definitions"):
+            members = node.get(keyword)
+            if isinstance(members, dict):
+                children.extend(
+                    (f"/{escape(keyword)}/{escape(key)}", child) for key, child in members.items()
+                )
+        for keyword in _SCHEMA_ARRAY_KEYWORDS:
+            members = node.get(keyword)
+            if isinstance(members, list):
+                children.extend((f"/{keyword}/{i}", child) for i, child in enumerate(members))
+        for keyword in _SINGLE_SCHEMA_KEYWORDS:
+            children.append((f"/{keyword}", node.get(keyword)))
+        items = node.get("items")
+        if isinstance(items, list):
+            children.extend((f"/items/{i}", child) for i, child in enumerate(items))
+        for suffix, child in children:
+            if not isinstance(child, dict) or id(child) in index:
+                continue
+            if len(index) >= _MAX_SCHEMA_NODES:
+                return index
+            child_pointer = pointer + suffix
+            if len(child_pointer) > _MAX_POINTER_CHARS:
+                continue
+            index[id(child)] = child_pointer
+            stack.append((child, child_pointer, depth + 1))
     return index
 
 
@@ -238,7 +273,10 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
                 target = local_reference_target(schema, ref, anchor_cache)
                 # Field paths must address the target itself, so an anchor or an
                 # encoded pointer yields the same path as the plain pointer form.
-                if target is not None:
+                # Paths are only built when the caller asked for pointer paths.
+                if target is not None and not pointer_paths:
+                    resolved = target
+                elif target is not None:
                     if pointer_index is None:
                         pointer_index = _schema_pointer_index(schema)
                     target_pointer = pointer_index.get(id(target))
