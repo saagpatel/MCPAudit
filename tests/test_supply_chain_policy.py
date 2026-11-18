@@ -30,6 +30,9 @@ REVIEWED_ACTION_RELEASES = {
     ),
     "ossf/scorecard-action": ("fa7117db83c52d787ae5a89f350999701505d78e", "v2.5.0"),
     "pypa/gh-action-pypi-publish": ("7245906fb61fa33a13554f9d5fb856fe61758086", "v1.14.3"),
+    # v0.5.1 is v0.5.0 with only its nested setup-python and upload-sarif pinned by
+    # SHA (the commits @v6 and @v4 resolved to), which repository SHA-pinning
+    # enforcement requires. It supersedes the untagged main pin from #413.
     "saagpatel/agent-permission-diff-bot": (
         "e57514fe4e12f1adf8a104a4d506fdc677a997fa",
         "v0.5.1",
