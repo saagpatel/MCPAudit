@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 
+from mcp_audit.analyzer import PermissionAnalyzer
 from mcp_audit.models import SsrfSeverity, ToolInfo
 from mcp_audit.ssrf import SsrfDetector
 
@@ -76,3 +77,50 @@ def test_ambiguous_anchor_stays_visibly_incomplete(form: str) -> None:
     assert [(f.severity, f.pattern_name) for f in findings] == [
         (SsrfSeverity.MEDIUM, "schema_traversal_incomplete")
     ]
+
+
+SHELL_DEF: dict[str, Any] = {"type": "object", "properties": {"shell_command": {"type": "string"}}}
+
+
+def _dereference(document: dict[str, Any], pointer: str) -> object:
+    node: object = document
+    for raw in pointer.split("/")[1:]:
+        token = raw.replace("~1", "/").replace("~0", "~")
+        assert isinstance(node, dict) and token in node, pointer
+        node = node[token]
+    return node
+
+
+def _shell_findings(properties: dict[str, Any], defs: dict[str, Any]) -> list[tuple[str, str, list[str]]]:
+    tool = ToolInfo(
+        name="helper",
+        description="Helper.",
+        input_schema={"type": "object", "properties": properties, "$defs": defs},
+    )
+    findings = PermissionAnalyzer().analyze_tool(tool)
+    for finding in findings:
+        for path in finding.field_paths:
+            _dereference({"input_schema": tool.input_schema}, path)
+    return [(f.category.value, f.confidence.value, f.field_paths) for f in findings]
+
+
+@pytest.mark.parametrize(
+    ("properties", "defs"),
+    [
+        ({"t": {"$ref": "#node"}}, {"n": {"$anchor": "node", **SHELL_DEF}}),
+        ({"t": {"$ref": "#/$defs/a%20b"}}, {"a b": SHELL_DEF}),
+        ({"a": {"$ref": "#node"}, "b": {"$ref": "#/$defs/n"}}, {"n": {"$anchor": "node", **SHELL_DEF}}),
+    ],
+    ids=["anchor", "percent-encoded", "mixed-anchor-and-pointer"],
+)
+def test_resolved_refs_give_canonical_field_paths_and_count_once(
+    properties: dict[str, Any], defs: dict[str, Any]
+) -> None:
+    plain = _shell_findings({"t": {"$ref": "#/$defs/n"}}, {"n": SHELL_DEF})
+    found = _shell_findings(properties, defs)
+    assert [(category, confidence) for category, confidence, _ in found] == [
+        (category, confidence) for category, confidence, _ in plain
+    ]
+    for _, _, paths in found:
+        assert all(path.endswith("/properties/shell_command") for path in paths)
+        assert len(paths) == len(set(paths))

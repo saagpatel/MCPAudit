@@ -162,6 +162,27 @@ def _resolve_local_ref(root: dict[str, object], ref: str) -> dict[str, object] |
     return current if isinstance(current, dict) else None
 
 
+def _schema_pointer_index(root: dict[str, object]) -> dict[int, str]:
+    """Map each object or array inside ``root`` to its first escaped JSON Pointer.
+
+    Bounded by the schema node budget; a container beyond it gets no pointer,
+    which callers treat as an unresolved reference.
+    """
+    index: dict[int, str] = {id(root): ""}
+    stack: list[tuple[object, str]] = [(root, "")]
+    while stack and len(index) < 4 * _MAX_SCHEMA_NODES:
+        node, pointer = stack.pop()
+        children = (
+            node.items() if isinstance(node, dict) else enumerate(node) if isinstance(node, list) else ()
+        )
+        for key, child in children:
+            if isinstance(child, (dict, list)) and id(child) not in index:
+                child_pointer = f"{pointer}/{str(key).replace('~', '~0').replace('/', '~1')}"
+                index[id(child)] = child_pointer
+                stack.append((child, child_pointer))
+    return index
+
+
 def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = False) -> _SchemaWalkResult:
     """Return named properties from reachable, bounded JSON Schema branches.
 
@@ -182,6 +203,7 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
     visited_nodes = 0
     property_count = 0
     anchor_cache: dict[int, dict[str, dict[str, object] | None] | None] = {}
+    pointer_index: dict[int, str] | None = None
 
     def child_path(prefix: str, keyword: str, suffix: str, index: object | None = None) -> str:
         if pointer_paths:
@@ -206,17 +228,26 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
         ref = node.get("$ref")
         if isinstance(ref, str):
             resolved = _resolve_local_ref(schema, ref)
+            ref_pointer = ref[1:]
             if resolved is None and ref.startswith("#"):
                 # `$anchor` and percent-encoded pointers: resolve them the way the
                 # schema metadata rules do, so both walkers reach the same nodes.
                 # Imported here because schema_rules imports this module.
                 from mcp_audit.schema_rules import local_reference_target
 
-                resolved = local_reference_target(schema, ref, anchor_cache)
+                target = local_reference_target(schema, ref, anchor_cache)
+                # Field paths must address the target itself, so an anchor or an
+                # encoded pointer yields the same path as the plain pointer form.
+                if target is not None:
+                    if pointer_index is None:
+                        pointer_index = _schema_pointer_index(schema)
+                    target_pointer = pointer_index.get(id(target))
+                    if target_pointer is not None:
+                        resolved, ref_pointer = target, target_pointer
             if resolved is None:
                 incomplete.add(f"unresolved or external reference: {ref}")
             else:
-                stack.append((resolved, ref[1:] if pointer_paths else prefix, depth + 1, branch))
+                stack.append((resolved, ref_pointer if pointer_paths else prefix, depth + 1, branch))
 
         for keyword in ("$dynamicRef", "$recursiveRef"):
             dynamic_ref = node.get(keyword)
