@@ -131,7 +131,7 @@ the limits of these outputs.
 
 ### Stack
 
-MCPAudit uses Python 3.11+, `uv`, pytest, Ruff, and mypy. JSON, SARIF, and HTML reports are versioned public surfaces. Run `make check` before proposing changes.
+MCPAudit uses Python 3.11+, `uv`, pytest, Ruff, and mypy. JSON, SARIF, and HTML reports are versioned public surfaces. From a clone, run `make install` (installs every workspace package; tests fail at collection without it), then `make check` before proposing changes (the full suite takes about 10 minutes; do not kill it). Tests only: `uv run --locked pytest -q`.
 
 ### Known risks
 

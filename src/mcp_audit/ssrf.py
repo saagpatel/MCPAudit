@@ -304,6 +304,46 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
     return _SchemaWalkResult(found, sorted(incomplete))
 
 
+# RFC 3986 Appendix B: splits any string into scheme, authority, path, query and
+# fragment without validating the parts. It always matches.
+_URI_PARTS_RE = re.compile(r"^(?:([^:/?#]+):)?(?://([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#(.*))?$", re.DOTALL)
+
+
+@dataclass(frozen=True)
+class UriParts:
+    """URI components for metadata analysis, as ``urlparse`` names them."""
+
+    scheme: str
+    netloc: str
+    path: str
+    query: str
+    hostname: str
+
+
+def split_uri(uri: str) -> UriParts:
+    """Split a server-supplied URI, falling back when ``urlparse`` rejects it.
+
+    ``urlparse`` raises ``ValueError`` for some authorities (Python 3.14 validates
+    bracketed hosts such as ``[{host}]``). Resource URIs are untrusted metadata, so
+    analysis must still see their parts instead of crashing or skipping them: the
+    fallback splits by the RFC 3986 grammar and derives the host from the authority.
+    """
+    try:
+        parsed = urlparse(uri)
+        return UriParts(parsed.scheme, parsed.netloc, parsed.path, parsed.query, parsed.hostname or "")
+    except ValueError:
+        match = _URI_PARTS_RE.match(uri)
+        if match is None:  # unreachable: the Appendix B pattern matches every string
+            return UriParts("", "", uri, "", "")
+        scheme, netloc, path, query = (match.group(i) or "" for i in (1, 2, 3, 4))
+        host = netloc.rsplit("@", 1)[-1]
+        if host.startswith("["):
+            host = host[1:].split("]", 1)[0]
+        else:
+            host = host.split(":", 1)[0]
+        return UriParts(scheme, netloc, path, query, host.lower())
+
+
 class SsrfDetector:
     """Detects SSRF-prone capabilities from tool schemas and resource URIs."""
 
@@ -362,11 +402,9 @@ class SsrfDetector:
     def scan_resource(self, resource: ResourceInfo) -> list[SsrfFinding]:
         """Return an SSRF finding for a remote resource URI with a caller-templated target."""
         uri = resource.uri
-        try:
-            parsed = urlparse(uri)
-        except ValueError:
-            # Malformed authority (e.g. bracketed non-IP host) — skip, never crash the scan.
-            return []
+        # split_uri never raises: a malformed authority (e.g. a bracketed template
+        # host) is still classified instead of being skipped.
+        parsed = split_uri(uri)
         if parsed.scheme.lower() not in _REMOTE_SCHEMES:
             return []
         if "{" not in uri or "}" not in uri:
@@ -377,7 +415,7 @@ class SsrfDetector:
         host_authority = parsed.netloc.rsplit("@", 1)[-1]
         if "{" in host_authority:
             severity, pattern = SsrfSeverity.HIGH, "remote_uri_host_template"
-            safe_authority = urlparse(redacted_excerpt(uri, 0, len(uri))).netloc
+            safe_authority = split_uri(redacted_excerpt(uri, 0, len(uri))).netloc
             evidence = [
                 f"remote scheme '{parsed.scheme.lower()}'",
                 f"caller-templated host authority '{safe_authority}'",
