@@ -51,14 +51,25 @@ pinned.
 | `exfiltration`, `shell_execution`, `destructive` | **HIGH** |
 | `file_write`, `network` | **MEDIUM** |
 
-**Note on annotation defaults.** A reconstructed baseline tool has no annotations,
-so MCP annotation defaults (`destructive_hint`/`open_world_hint` default true)
-give it `destructive` + `network` at *declared* confidence. Because the baseline
-therefore already carries those two categories, they can never be reported as
-*gained* — which neatly prevents annotation-default flapping. In practice the
-live escalation signals are **`file_write`** (MEDIUM) and
-**`shell_execution`/`exfiltration`** (HIGH), all derived from the tool's
-description/schema content rather than annotation defaults.
+**Note on annotation defaults.** Absent annotation hints add no category: a tool
+without annotations, including a reconstructed baseline tool, gets categories
+only from its name, description and schema content. So any category in the
+table can be reported as gained, `destructive` and `network` included. They are
+gained when the description or schema gains destructive or network content
+(for example "and delete the cache", "from an HTTP API endpoint"), or when the
+tool newly declares `destructiveHint: true` (while `readOnlyHint` is not `true`)
+or `openWorldHint: true`. A tool that declares both `readOnlyHint: true` and
+`destructiveHint: true` gains no `destructive` category from the hints, only the
+annotation-delta finding below. A description tweak that adds no such content
+does not fire.
+
+The separate HIGH annotation-delta finding has its own, asymmetric conditions.
+It fires when `destructiveHint` becomes `true` (from absent or not true), when
+`openWorldHint` was explicitly `false` in the baseline and no longer is, and when
+`readOnlyHint` was explicitly `true` and no longer is. So declaring
+`openWorldHint: true` on a tool that never declared the hint gives only the
+MEDIUM `network` capability finding, while changing it from `false` to `true`
+gives both.
 
 ### MCP019 — Description-injection escalation
 
@@ -144,7 +155,9 @@ JSON. It requires an existing pin baseline.
 - **Findings are a pure delta vs the approved baseline.** An unchanged tool never
   fires. The most likely "false" positive is a *legitimate* capability addition you
   simply have not re-approved yet — review it, then `pin --refresh`.
-- **`destructive`/`network` are never reported as gained** (see the annotation-default
-  note above), so benign description tweaks do not flap those categories.
+- **Absent annotation hints never create a gained category** (see the
+  annotation-default note above). `destructive`/`network` are reported as gained
+  only when the content or a declared hint adds them, so benign description
+  tweaks do not flap those categories.
 - **A removed or brand-new tool is not an escalation.** New tools are reported by
   drift (`--pin-check`, status NEW); removed tools cannot escalate.

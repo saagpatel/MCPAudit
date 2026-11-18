@@ -42,8 +42,12 @@ Examples that all normalise to `readfile`:
 - `read-file`
 - `Read File`
 
-Only fires when the canonical normalised form is **not already an exact match**
-for any pair — no double-reporting.
+Does not fire when every name in the group is byte-identical: MCP015 alone
+covers that. When a group mixes an exact pair with a case or separator variant
+on another server (`delete` on two servers, `Delete` on a third), MCP015
+reports the exact pair and MCP016 **also** fires for the full group, so the
+variant's server stays visible. A group where any name changes under Unicode
+normalisation is left to the homoglyph check (MCP017).
 
 Normalisation: lowercase + strip `[_\-\s]+`.
 

@@ -93,9 +93,9 @@ class TestNoEscalation:
         assert findings == []
 
     def test_annotation_default_categories_never_falsely_gained(self) -> None:
-        # destructive/network come from MCP annotation defaults on annotation-less
-        # tools, so they are present in BOTH baseline and current and can never be
-        # reported as gained. A benign description tweak must not fire.
+        # Absent annotation hints add no category, so an annotation-less tool on
+        # both sides gains nothing from defaults. A benign description tweak that
+        # adds no destructive or network content must not fire.
         findings = _run("w", "Return the current weather", "Return the latest weather report")
         assert findings == []
 
