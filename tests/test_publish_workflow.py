@@ -739,3 +739,63 @@ def test_workflow_readback_wait_is_bounded() -> None:
     source = Path("scripts/release_publish.py").read_text(encoding="utf-8")
     assert "attempts=READBACK_ATTEMPTS" in source
     assert "delay=READBACK_DELAY_SECONDS" in source
+
+
+def test_supply_chain_evidence_binds_the_verified_bytes() -> None:
+    """Reproducibility and SBOMs run in the read-only build; attestations sign the exact
+    verified files inside the reviewer-gated publish job, before any upload, on every
+    publishing run including resumes."""
+    workflow = yaml.safe_load(Path(".github/workflows/publish.yml").read_text())
+    jobs = workflow["jobs"]
+    build = jobs["build"]["steps"]
+    names = [step.get("name", "") for step in build]
+    repro = names.index("Reproducible-build check (rebuild from a fresh clone, compare SHA-256)")
+    sbom = names.index("Generate CycloneDX SBOMs from the locked runtime dependencies")
+    assert (
+        names.index("Verify built distributions") < repro < sbom < names.index("Stage the six verified files")
+    )
+    assert "--reference dist" in build[repro]["run"]
+    assert "--build-constraints" in build[repro]["env"]["REBUILD"]
+    rebuild_packages = build[repro]["env"]["REBUILD"].split(" in ", 1)[1].split(";", 1)[0].split()
+    assert rebuild_packages == [item.name for item in TRAIN]
+    sbom_packages = build[sbom]["run"].split(" in ", 1)[1].split(";", 1)[0].split()
+    assert sbom_packages == [item.name for item in TRAIN]
+    assert "--format cyclonedx1.5" in build[sbom]["run"]
+    uploads = [step for step in build if "upload-artifact" in step.get("uses", "")]
+    assert [step["with"]["name"] for step in uploads] == [
+        "mcp-audits-${{ inputs.version }}",
+        "mcp-audits-${{ inputs.version }}-supply-chain",
+    ]
+    assert "*" not in uploads[1]["with"]["path"]
+    assert len(uploads[1]["with"]["path"].splitlines()) == 1 + len(TRAIN)
+
+    publish_job = jobs["publish"]
+    assert publish_job["permissions"]["attestations"] == "write"
+    steps = publish_job["steps"]
+    stage = next(i for i, step in enumerate(steps) if step.get("id") == "stage")
+    first_upload = next(i for i, step in enumerate(steps) if "gh-action-pypi-publish" in step.get("uses", ""))
+    attests = [i for i, step in enumerate(steps) if step.get("uses", "").startswith("actions/attest@")]
+    assert len(attests) == 1 + len(TRAIN)
+    assert all(stage < i < first_upload for i in attests)
+    evidence = next(
+        i for i, step in enumerate(steps) if step.get("name") == "Download retained supply-chain evidence"
+    )
+    predicate = next(i for i, step in enumerate(steps) if "release_provenance.py" in step.get("run", ""))
+    assert stage < evidence < predicate < attests[0]
+    assert steps[evidence]["with"]["run-id"] == "${{ needs.validate-dispatch-ref.outputs.run-id }}"
+    assert steps[predicate]["env"]["BUILD_RUN_ID"] == "${{ needs.validate-dispatch-ref.outputs.run-id }}"
+    for i in (evidence, predicate, *attests):
+        # A resume can follow a dry run, which never attested, so no evidence step may skip it.
+        assert "if" not in steps[i]
+    for i in attests:
+        assert steps[i]["with"]["create-storage-record"] is False
+        assert "*" not in steps[i]["with"]["subject-path"]
+    provenance = steps[attests[0]]["with"]
+    assert len(provenance["subject-path"].splitlines()) == 2 * len(TRAIN)
+    assert provenance["predicate-type"] == "https://slsa.dev/provenance/v1"
+    assert provenance["predicate-path"] == "${{ runner.temp }}/release-provenance.json"
+    assert "sbom-path" not in provenance
+    assert {"RELEASE_COMMIT", "CONTROL_SHA", "MANIFEST_SHA256", "RELEASE_VERSION"} <= set(publish_job["env"])
+    assert all("sbom-path" in steps[i]["with"] for i in attests[1:])
+    for job_name in ("build", "consumer-smoke", "resume", "validate-dispatch-ref"):
+        assert "attestations" not in jobs[job_name].get("permissions", {})

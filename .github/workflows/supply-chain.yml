@@ -1,0 +1,60 @@
+name: Supply chain
+
+# Runs the release train's reproducibility and SBOM steps on every change, with
+# read-only permissions and no publishing authority.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  reproducible-build:
+    name: Reproducible build and SBOMs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.11"
+          version: "0.13.9"
+          enable-cache: false
+
+      - name: Build twice from fresh clones and compare SHA-256
+        env:
+          CONSTRAINTS: ${{ github.workspace }}/build-constraints.txt
+          # The release job's serial per-package build; {out} is the checker's fresh output dir.
+          REBUILD: >-
+            for p in mcp-audits mcp-audits-labs mcp-audits-proof; do
+            uv build --package "$p" --no-create-gitignore --out-dir {out}
+            --build-constraints "$CONSTRAINTS" || exit 1; done
+        run: |
+          mkdir -p "$RUNNER_TEMP/supply-chain"
+          python scripts/check_reproducible_build.py \
+            --report "$RUNNER_TEMP/supply-chain/reproducible-build.json" --build "$REBUILD"
+
+      - name: Generate CycloneDX SBOMs
+        run: |
+          for package in mcp-audits mcp-audits-labs mcp-audits-proof; do
+            uv export --preview-features sbom-export --format cyclonedx1.5 --locked --no-dev \
+              --all-extras --package "$package" \
+              --output-file "$RUNNER_TEMP/supply-chain/$package.cdx.json"
+          done
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: supply-chain
+          path: |
+            ${{ runner.temp }}/supply-chain/reproducible-build.json
+            ${{ runner.temp }}/supply-chain/mcp-audits.cdx.json
+            ${{ runner.temp }}/supply-chain/mcp-audits-labs.cdx.json
+            ${{ runner.temp }}/supply-chain/mcp-audits-proof.cdx.json
+          if-no-files-found: error
+          retention-days: 14
