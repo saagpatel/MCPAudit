@@ -82,7 +82,10 @@ def _members(path: Path) -> dict[str, str]:
 
 
 def _explain(name: str, left: Path, right: Path) -> list[str]:
-    a, b = _members(left / name), _members(right / name)
+    try:
+        a, b = _members(left / name), _members(right / name)
+    except (OSError, EOFError, tarfile.TarError, zipfile.BadZipFile) as exc:
+        return [f"    {name}: cannot open as an archive ({exc.__class__.__name__}); compare raw bytes"]
     if not a and not b:
         return [f"    {name}: not an archive this script can open"]
     lines = []
@@ -94,7 +97,13 @@ def _explain(name: str, left: Path, right: Path) -> list[str]:
                 f"      second: {b.get(member, '<absent>')}"
             )
     if not lines and name.endswith((".tar.gz", ".tgz")):
-        if gzip.decompress((left / name).read_bytes()) == gzip.decompress((right / name).read_bytes()):
+        try:
+            same_tar = gzip.decompress((left / name).read_bytes()) == gzip.decompress(
+                (right / name).read_bytes()
+            )
+        except (OSError, EOFError):
+            same_tar = False
+        if same_tar:
             lines.append(
                 f"    {name}: uncompressed tar is identical;"
                 " only the gzip stream differs (compressor or zlib build)"
@@ -118,7 +127,8 @@ def _build(root: Path, commit: str, workdir: Path, label: str, command: str, sub
     print(f"[repro] build {label}: {rendered}", flush=True)
     result = subprocess.run(rendered, shell=True, cwd=cwd)
     if result.returncode != 0:
-        raise SystemExit(f"[repro] build {label} failed with exit code {result.returncode}")
+        print(f"[repro] build {label} failed with exit code {result.returncode}", file=sys.stderr)
+        raise SystemExit(2)
     return out
 
 
@@ -201,6 +211,9 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"[repro] reproducible: {len(first)} artifact(s) identical at {commit}")
         return 0
+    except subprocess.CalledProcessError as exc:
+        print(f"[repro] setup command failed: {exc}", file=sys.stderr)
+        return 2
     finally:
         if args.keep:
             print(f"[repro] kept {workdir}")
