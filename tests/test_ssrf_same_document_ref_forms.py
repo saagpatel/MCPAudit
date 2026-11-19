@@ -193,3 +193,34 @@ def test_pointer_index_bounds_allocation_on_wide_containers(wide_def: dict[str, 
     # The round-3 version allocated about 12 MB here; the lazy walk stays far below 1 MB.
     assert peak < 512 * 1024, peak
     assert len(index) <= 8
+
+
+@pytest.mark.parametrize(
+    "wide_def",
+    [
+        {"allOf": [{} for _ in range(200_000)]},
+        {"properties": {f"p{i}": {} for i in range(200_000)}},
+        {"allOf": [True] * 200_000},
+    ],
+    ids=["allOf-empty-schemas", "properties-empty-schemas", "allOf-booleans"],
+)
+def test_anchor_inventory_walk_bounds_pending_work(wide_def: dict[str, Any]) -> None:
+    from mcp_audit.schema_rules import _walk_nodes
+
+    schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {"t": {"$ref": "#node"}},
+        "$defs": {"n": {"$anchor": "node", **URL_DEF}, "wide": wide_def},
+    }
+    reasons: list[str] = []
+    peak = _peak_bytes(lambda: _walk_nodes(schema, include_definitions=True, incomplete_reasons=reasons))
+    # The unbounded walk queued every child first (about 1.6 MB for 200,000 empty schemas).
+    assert peak < 512 * 1024, peak
+    assert reasons == ["node_budget_exceeded"]
+    # An incomplete inventory cannot vouch for anchors, so the ref stays visibly incomplete.
+    findings = SsrfDetector().scan_server(
+        [ToolInfo(name="fetch_doc", description="Fetch a document.", input_schema=schema)], []
+    )
+    assert [(f.severity, f.pattern_name) for f in findings] == [
+        (SsrfSeverity.MEDIUM, "schema_traversal_incomplete")
+    ]
