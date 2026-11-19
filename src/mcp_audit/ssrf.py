@@ -9,6 +9,7 @@ metadata endpoints) — not that the server is exploitable.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -162,6 +163,78 @@ def _resolve_local_ref(root: dict[str, object], ref: str) -> dict[str, object] |
     return current if isinstance(current, dict) else None
 
 
+_MAX_POINTER_CHARS = 4_096
+# Child slots (including non-object values such as boolean schemas) examined
+# across one index build. Bounds time and work on wide containers.
+_MAX_POINTER_INDEX_SLOTS = 8 * _MAX_SCHEMA_NODES
+
+
+def _schema_pointer_index(root: dict[str, object]) -> dict[int, str]:
+    """Map schema objects inside ``root`` to their escaped JSON Pointers.
+
+    Follows only schema-bearing keywords (never instance payloads such as
+    ``examples`` or ``default``). Children are visited lazily, one slot at a
+    time: non-object values are skipped before anything is built, the slot,
+    node, depth and pointer-length budgets are checked before a child's
+    pointer is constructed, and no per-node children list is materialised. A
+    schema object outside the budget gets no pointer, which callers report as
+    an unresolved reference.
+    """
+    # Imported here because schema_rules imports this module.
+    from mcp_audit.schema_rules import (
+        _SCHEMA_ARRAY_KEYWORDS,
+        _SCHEMA_MAP_KEYWORDS,
+        _SINGLE_SCHEMA_KEYWORDS,
+    )
+
+    def escape(token: object) -> str:
+        return str(token).replace("~", "~0").replace("/", "~1")
+
+    def child_slots(node: dict[str, object]) -> Iterator[tuple[str, object, object]]:
+        """Yield (keyword, key or index or None, child) lazily."""
+        for keyword in (*_SCHEMA_MAP_KEYWORDS, "$defs", "definitions"):
+            members = node.get(keyword)
+            if isinstance(members, dict):
+                for key, child in members.items():
+                    yield keyword, key, child
+        for keyword in _SCHEMA_ARRAY_KEYWORDS:
+            members = node.get(keyword)
+            if isinstance(members, list):
+                for position, child in enumerate(members):
+                    yield keyword, position, child
+        for keyword in _SINGLE_SCHEMA_KEYWORDS:
+            yield keyword, None, node.get(keyword)
+        items = node.get("items")
+        if isinstance(items, list):
+            for position, child in enumerate(items):
+                yield "items", position, child
+
+    index: dict[int, str] = {id(root): ""}
+    stack: list[tuple[dict[str, object], str, int]] = [(root, "", 0)]
+    slots = 0
+    while stack:
+        node, pointer, depth = stack.pop()
+        if depth >= _MAX_SCHEMA_DEPTH:
+            continue
+        for keyword, key, child in child_slots(node):
+            slots += 1
+            if slots > _MAX_POINTER_INDEX_SLOTS:
+                return index
+            if not isinstance(child, dict) or id(child) in index:
+                continue
+            if len(index) >= _MAX_SCHEMA_NODES:
+                return index
+            suffix_length = len(keyword) + 1 + (len(str(key)) + 1 if key is not None else 0)
+            if len(pointer) + suffix_length > _MAX_POINTER_CHARS:
+                continue
+            child_pointer = f"{pointer}/{keyword}" if key is None else f"{pointer}/{keyword}/{escape(key)}"
+            if len(child_pointer) > _MAX_POINTER_CHARS:  # escaping can lengthen the key
+                continue
+            index[id(child)] = child_pointer
+            stack.append((child, child_pointer, depth + 1))
+    return index
+
+
 def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = False) -> _SchemaWalkResult:
     """Return named properties from reachable, bounded JSON Schema branches.
 
@@ -181,6 +254,8 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
     ]
     visited_nodes = 0
     property_count = 0
+    anchor_cache: dict[int, dict[str, dict[str, object] | None] | None] = {}
+    pointer_index: dict[int, str] | None = None
 
     def child_path(prefix: str, keyword: str, suffix: str, index: object | None = None) -> str:
         if pointer_paths:
@@ -205,10 +280,29 @@ def _iter_schema_properties(schema: dict[str, object], *, pointer_paths: bool = 
         ref = node.get("$ref")
         if isinstance(ref, str):
             resolved = _resolve_local_ref(schema, ref)
+            ref_pointer = ref[1:]
+            if resolved is None and ref.startswith("#"):
+                # `$anchor` and percent-encoded pointers: resolve them the way the
+                # schema metadata rules do, so both walkers reach the same nodes.
+                # Imported here because schema_rules imports this module.
+                from mcp_audit.schema_rules import local_reference_target
+
+                target = local_reference_target(schema, ref, anchor_cache)
+                # Field paths must address the target itself, so an anchor or an
+                # encoded pointer yields the same path as the plain pointer form.
+                # Paths are only built when the caller asked for pointer paths.
+                if target is not None and not pointer_paths:
+                    resolved = target
+                elif target is not None:
+                    if pointer_index is None:
+                        pointer_index = _schema_pointer_index(schema)
+                    target_pointer = pointer_index.get(id(target))
+                    if target_pointer is not None:
+                        resolved, ref_pointer = target, target_pointer
             if resolved is None:
                 incomplete.add(f"unresolved or external reference: {ref}")
             else:
-                stack.append((resolved, ref[1:] if pointer_paths else prefix, depth + 1, branch))
+                stack.append((resolved, ref_pointer if pointer_paths else prefix, depth + 1, branch))
 
         for keyword in ("$dynamicRef", "$recursiveRef"):
             dynamic_ref = node.get(keyword)

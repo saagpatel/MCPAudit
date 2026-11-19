@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import deque
 from collections.abc import Iterator
 from urllib.parse import ParseResult, unquote, urlparse
 
@@ -23,6 +24,8 @@ _CREDENTIAL_WORDS = {
 }
 _PRIMITIVE_TYPES = {"string", "number", "integer", "boolean"}
 _MAX_SCHEMA_NODES = 2048
+# Child slots (objects and non-objects) examined in one walk.
+_MAX_SCHEMA_SLOTS = 8 * _MAX_SCHEMA_NODES
 _SCHEMA_MAP_KEYWORDS = ("properties", "patternProperties", "dependentSchemas", "dependencies")
 _SCHEMA_ARRAY_KEYWORDS = ("allOf", "anyOf", "oneOf", "prefixItems")
 _SINGLE_SCHEMA_KEYWORDS = (
@@ -280,6 +283,27 @@ def _schema_children(node: dict[str, object], *, include_definitions: bool) -> I
             yield value
 
 
+def _schema_child_slots(node: dict[str, object], *, include_definitions: bool) -> Iterator[object]:
+    """Yield every child slot of ``node`` lazily, objects and non-objects alike.
+
+    Same keywords and order as ``_schema_children``; non-object values (for
+    example boolean schemas) are yielded so the caller can count them against
+    its slot budget without building anything for them.
+    """
+    for key in sorted(node.keys() & _CHILD_KEYWORD_ORDER.keys(), key=_CHILD_KEYWORD_ORDER.__getitem__):
+        value = node[key]
+        if key in (*_SCHEMA_MAP_KEYWORDS, "$defs", "definitions"):
+            if key in {"$defs", "definitions"} and not include_definitions:
+                continue
+            if isinstance(value, dict):
+                yield from value.values()
+        elif key in _SCHEMA_ARRAY_KEYWORDS or (key == "items" and isinstance(value, list)):
+            if isinstance(value, list):
+                yield from value
+        elif isinstance(value, dict):
+            yield value
+
+
 def _walk_nodes(
     root: dict[str, object],
     *,
@@ -290,6 +314,8 @@ def _walk_nodes(
     stack = [root]
     seen: set[int] = set()
     nodes: list[dict[str, object]] = []
+    slots = 0
+    budget_exceeded = False
     while stack:
         node = stack.pop()
         if id(node) in seen:
@@ -313,7 +339,32 @@ def _walk_nodes(
                 )
                 if reason not in incomplete_reasons:
                     incomplete_reasons.append(reason)
-        stack.extend(_schema_children(node, include_definitions=include_definitions))
+        # Bound pending work before allocating it. At most `remaining` more nodes
+        # can be visited, and the stack is LIFO, so only the last `remaining`
+        # object children of this node can matter: a bounded deque keeps exactly
+        # those, in order, without materialising the rest. Every child slot,
+        # including non-object values, counts against the walk's slot budget.
+        remaining = _MAX_SCHEMA_NODES - len(seen)
+        pending: deque[dict[str, object]] = deque(maxlen=remaining + 1)
+        object_children = 0
+        for child in _schema_child_slots(node, include_definitions=include_definitions):
+            slots += 1
+            if slots > _MAX_SCHEMA_SLOTS:
+                budget_exceeded = True
+                break
+            if isinstance(child, dict):
+                object_children += 1
+                pending.append(child)
+        if object_children > len(pending):
+            budget_exceeded = True
+        stack.extend(pending)
+        if len(stack) > remaining + 1:
+            del stack[: len(stack) - (remaining + 1)]
+            budget_exceeded = True
+        if slots > _MAX_SCHEMA_SLOTS:
+            break
+    if budget_exceeded and "node_budget_exceeded" not in incomplete_reasons:
+        incomplete_reasons.append("node_budget_exceeded")
     return nodes
 
 
@@ -330,12 +381,10 @@ def _origin(parsed: ParseResult) -> tuple[str, str, int | None] | None:
     return scheme, hostname.casefold(), None if port == default_port else port
 
 
-def _schema_rules(
-    tool: ToolInfo, schema: dict[str, object], *, incomplete_reasons: list[str]
-) -> list[SchemaFinding]:
-    findings: list[SchemaFinding] = []
-    reachability_incomplete: list[str] = []
-    all_nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=reachability_incomplete)
+def _reference_anchors(
+    schema: dict[str, object], all_nodes: list[dict[str, object]], walk_incomplete: list[str]
+) -> dict[str, dict[str, object] | None] | None:
+    """Map each `$anchor` to its node (None when declared twice), or None when unusable."""
     anchors: dict[str, dict[str, object] | None] = {}
     for node in all_nodes:
         anchor = node.get("$anchor")
@@ -343,11 +392,34 @@ def _schema_rules(
             anchors[anchor] = None if anchor in anchors else node
     # Embedded resources change reference scope; a partial inventory cannot
     # establish anchor uniqueness or rule out an unseen resource boundary.
-    reference_anchors = (
-        None
-        if reachability_incomplete or any(node is not schema and "$id" in node for node in all_nodes)
-        else anchors
-    )
+    if walk_incomplete or any(node is not schema and "$id" in node for node in all_nodes):
+        return None
+    return anchors
+
+
+def local_reference_target(
+    schema: dict[str, object], ref: str, cache: dict[int, dict[str, dict[str, object] | None] | None]
+) -> dict[str, object] | None:
+    """Resolve a same-document `$ref` (pointer, percent-encoded pointer or `$anchor`).
+
+    The anchor inventory is built once per schema and kept in ``cache``.
+    """
+    key = id(schema)
+    if key not in cache:
+        walk_incomplete: list[str] = []
+        nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=walk_incomplete)
+        cache[key] = _reference_anchors(schema, nodes, walk_incomplete)
+    target = _local_ref(schema, ref, cache[key])
+    return target if isinstance(target, dict) else None
+
+
+def _schema_rules(
+    tool: ToolInfo, schema: dict[str, object], *, incomplete_reasons: list[str]
+) -> list[SchemaFinding]:
+    findings: list[SchemaFinding] = []
+    reachability_incomplete: list[str] = []
+    all_nodes = _walk_nodes(schema, include_definitions=True, incomplete_reasons=reachability_incomplete)
+    reference_anchors = _reference_anchors(schema, all_nodes, reachability_incomplete)
     reachable = _walk_nodes(
         schema,
         include_definitions=False,
