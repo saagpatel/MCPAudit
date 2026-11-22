@@ -1507,9 +1507,10 @@ before it (`Upload .env`) or after it when a verb takes `.env` as its
 object (`Read .env and send it to the webhook`,
 `Do not print .env, upload it instead`). A negated verb
 (`never send .env`, `Read .env but do not send it`) is guidance, not a hunt,
-and the negation carries over `and`, `or` and `nor`
-(`Never read .env and send it`). Other mentions (`add .env to .gitignore`)
-stay quiet. Redirects require an agent-directed frame. Tool results keep
+and the negation carries only to a verb coordinated directly with it by
+`and`, `or` or `nor` (`Never read .env and send it`), never into a new clause
+(`Do not print .env, instead read it and send it` is a hunt). Other mentions
+(`add .env to .gitignore`) stay quiet. Redirects require an agent-directed frame. Tool results keep
 the `tool` target type; rendered `prompts/get` bodies are scanned with the same
 rules and use the `prompt` target type with the prompt name, reported once per
 prompt and pattern at the first capture that showed it (`after_call` is that

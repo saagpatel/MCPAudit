@@ -29,7 +29,9 @@ _VERBS = (
 # verb may come before the file, or after it when a verb takes the file as its
 # object ("Read .env and send it", "Do not print .env, upload it instead"). A
 # negated verb ("never send") is guidance, not a hunt; the negation carries
-# over "and", "or" and "nor" ("Never read .env and send it").
+# only to verbs coordinated directly with it by "and", "or" or "nor" ("Never
+# read .env and send it"), never into a new clause ("Do not print .env,
+# instead read it and send it").
 _EXFIL_VERBS = (
     r"\b(?:include|upload|paste|attach|share|send|cat|print|dump|output|return|export|reveal"
     r"|show|echo|display|forward|post|transmit|exfiltrate)\b"
@@ -76,8 +78,11 @@ _NEGATED_BEFORE_VERB = re.compile(
     r"(?:\b(?:never|not|cannot|dont|without|avoid(?:ing)?)|n['\u2019]t)\s+(?:(?:ever|accidentally)\s+)?$",
     re.IGNORECASE,
 )
-# A conjunction that extends an earlier negation to the next verb.
-_CONTINUES_NEGATION = re.compile(r"\b(?:and|or|nor)\s+(?:then\s+)?$", re.IGNORECASE)
+# The whole gap between a negated verb's object and the next verb when that
+# verb is directly coordinated with it, so the negation extends to it.
+_COORDINATED = re.compile(
+    r"[`'\"]?(?:\s+(?:files?|it|them))?\s*(?:,\s*)?(?:and|or|nor)\s+(?:then\s+)?", re.IGNORECASE
+)
 # Agent-directed frames immediately before the verb: a vocative or an obligation.
 _DIRECTIVE_BEFORE_VERB = re.compile(
     r"(?:\b(?:assistant|agent|model|ai|claude)\s*[,:]?\s*"
@@ -149,10 +154,13 @@ def dotenv_hunt(text: str, start: int, end: int) -> bool:
         return False
     negated = _NEGATED_BEFORE_VERB.search(window[: governing.start()]) is not None
     after = _same_sentence_after(text, end)
+    previous = 0
     for verb in _EXFIL_VERB_RE.finditer(after):
-        lead = after[: verb.start()]
-        if not (_NEGATED_BEFORE_VERB.search(lead) or (negated and _CONTINUES_NEGATION.search(lead))):
+        if _NEGATED_BEFORE_VERB.search(after[: verb.start()]):
+            negated = True
+        elif not (negated and _COORDINATED.fullmatch(after, previous, verb.start())):
             return True
+        previous = verb.end()
     return False
 
 
