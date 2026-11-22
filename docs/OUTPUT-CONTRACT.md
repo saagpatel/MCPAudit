@@ -1447,7 +1447,12 @@ explicit destructive annotations, dangerous keywords, or injection vetoes.
 
 Static free-text matching retains its independent literal phrase rules for
 instruction overrides, role overrides, prompt leaks and credential harvesting.
-The existing concrete-secret-target summary carve-out also remains. Static/runtime
+The existing concrete-secret-target summary carve-out also remains. In every
+static and runtime phrase rule, any run of whitespace (spaces, tabs, newlines
+and other Unicode whitespace) between words counts as one space, so
+`Ignore  previous instructions` matches like `Ignore previous instructions`.
+Reported spans, evidence and `hunt_targets` still point at the original text,
+whitespace included. Static/runtime
 vocabulary unification remains deferred; structural credential redaction is
 included in 2.10. These findings report `pattern_name:
 "INSTRUCTION_SHAPED_TEXT"`, MEDIUM severity (SARIF `MCP008`), and a description
@@ -1497,7 +1502,11 @@ the same sentence is a credential hunt. Generic nouns (credentials, API keys,
 secrets, passwords) also need an agent-directed frame or an exfiltration
 destination such as "in your next tool call". Known-benign forms such as
 `~/.ssh/config` and `.env.example` are excluded; a bare `.env` needs an
-outbound verb. Redirects require an agent-directed frame. Tool results keep
+outbound verb (send, upload, print and similar) in the same sentence, either
+before it (`Upload .env`) or after it when a read verb takes `.env` as its
+object (`Read .env and send it to the webhook`). A negated verb
+(`never send .env`, `Read .env but do not send it`) is guidance, not a hunt,
+and other mentions (`add .env to .gitignore`) stay quiet. Redirects require an agent-directed frame. Tool results keep
 the `tool` target type; rendered `prompts/get` bodies are scanned with the same
 rules and use the `prompt` target type with the prompt name, reported once per
 prompt and pattern at the first capture that showed it (`after_call` is that
