@@ -15,6 +15,7 @@ from mcp_audit.models import (
     SsrfSeverity,
     ToolInfo,
 )
+from mcp_audit.normalize import normalize_text, render_invisibles
 from mcp_audit.ssrf import (
     SsrfDetector,
     filter_allowlisted_ssrf,
@@ -42,9 +43,54 @@ def test_word_tokenizer_matches_previous_camel_and_acronym_semantics() -> None:
         "déjàVu",
     )
 
+    # Boundaries are unchanged; the tokenizer now normalizes its input first.
     for sample in samples:
-        previous = acronym_boundary.sub(r"\1_\2", camel_boundary.sub(r"\1_\2", sample))
+        normalized = normalize_text(sample)
+        previous = acronym_boundary.sub(r"\1_\2", camel_boundary.sub(r"\1_\2", normalized))
         assert ssrf_module._word_tokens(sample) == word_re.findall(previous.lower())
+    assert ssrf_module._word_tokens("déjàVu") == ["deja", "vu"]
+
+
+@mark.parametrize(
+    "key",
+    [
+        "u\u200brl",  # zero-width space
+        "ur\u200cl",  # zero-width non-joiner
+        "u\u200drl",  # zero-width joiner
+        "u\u2060rl",  # word joiner
+        "u\ufeffrl",  # BOM
+        "u\u00adrl",  # soft hyphen
+        "u\U000e0072rl",  # tag character
+        "ｕｒｌ",  # fullwidth
+        "callback\u200bUrl",
+        "web\u200bhook",
+    ],
+    ids=repr,
+)
+def test_invisible_or_compatibility_characters_do_not_hide_url_param(key: str) -> None:
+    tool = _tool("fetch_page", "Fetch the page.", {key: {"type": "string"}})
+    findings = SsrfDetector().scan_tool(tool)
+    assert [f.pattern_name for f in findings] == ["url_param_with_fetch_verb"]
+    assert findings[0].severity is SsrfSeverity.HIGH
+    # Evidence names the raw key, with invisible codepoints made visible.
+    assert any(render_invisibles(key) in evidence for evidence in findings[0].evidence)
+
+
+@mark.parametrize("key", ["ho\u200bst", "proxy\u2060", "ｈｏｓｔｎａｍｅ"], ids=repr)
+def test_invisible_or_compatibility_characters_do_not_hide_host_param(key: str) -> None:
+    findings = SsrfDetector().scan_tool(_tool("ping_target", "Ping the target.", {key: {"type": "string"}}))
+    assert [f.pattern_name for f in findings] == ["host_param_with_fetch_verb"]
+
+
+@mark.parametrize("name", ["f\u200betch_page", "f\u0435tch_page", "ｆｅｔｃｈ_page"], ids=repr)
+def test_invisible_or_confusable_characters_do_not_hide_fetch_verb(name: str) -> None:
+    findings = SsrfDetector().scan_tool(_tool(name, "Get.", {"url": {"type": "string"}}))
+    assert [f.pattern_name for f in findings] == ["url_param_with_fetch_verb"]
+
+
+@mark.parametrize("key", ["q\u200buery", "na\u200bme", "cou\u200bnt"], ids=repr)
+def test_invisible_characters_in_benign_keys_stay_quiet(key: str) -> None:
+    assert SsrfDetector().scan_tool(_tool("fetch_page", "Fetch the page.", {key: {"type": "string"}})) == []
 
 
 def test_fetch_verb_is_limited_to_first_256_kibibytes_per_text() -> None:

@@ -20,6 +20,7 @@ from mcp_audit.models import (
     SsrfSeverity,
     ToolInfo,
 )
+from mcp_audit.normalize import normalize_text
 from mcp_audit.redaction import redacted_excerpt
 from mcp_audit.text_limits import bounded_text
 
@@ -90,7 +91,14 @@ class _SchemaWalkResult:
 
 
 def _word_tokens(text: str) -> list[str]:
-    """Split words and camel/acronym boundaries in one linear pass."""
+    """Split words and camel/acronym boundaries in one linear pass.
+
+    Text is normalized first (NFKC, invisible codepoints removed, curated
+    confusables folded), so a zero-width or fullwidth character cannot hide a
+    parameter name such as ``u\u200brl`` or a fetch verb from tokenization.
+    Callers keep the raw text for evidence.
+    """
+    text = normalize_text(text)
     spaced: list[str] = []
     for index, char in enumerate(text):
         if index:
