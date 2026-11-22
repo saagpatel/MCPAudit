@@ -25,7 +25,10 @@ _VERBS = (
     r"|display|forward|post|transmit|exfiltrate|grab)\b"
 )
 # Bare ".env" is a filename convention, not a path; only an outbound verb
-# makes it a hunt (reading it during setup is ordinary developer text).
+# makes it a hunt (reading it during setup is ordinary developer text). The
+# verb may come before the file, or after it when a read verb takes the file
+# as its object ("Read .env and send it"). A negated verb ("never send") is
+# guidance, not a hunt.
 _EXFIL_VERBS = (
     r"\b(?:include|upload|paste|attach|share|send|cat|print|dump|output|return|export|reveal"
     r"|show|echo|display|forward|post|transmit|exfiltrate)\b"
@@ -44,13 +47,13 @@ _CONCRETE_TARGET = re.compile(
     r"|(?-i:\b(?:GITHUB_TOKEN|GH_TOKEN|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AWS_SESSION_TOKEN"
     r"|OPENAI_API_KEY|ANTHROPIC_API_KEY|NPM_TOKEN|SLACK_TOKEN|DATABASE_URL)\b)"
     r"|(?-i:\$\{?(?:[A-Z_][A-Z0-9_]*_)?(?:TOKEN|SECRET|API_KEY|PASSWORD|CREDENTIALS)\}?)"
-    r"|\b(?:os\.environ|process\.env|environment variables?|env vars?|shell history)\b)",
+    r"|\b(?:os\.environ|process\.env|environment\s+variables?|env\s+vars?|shell\s+history)\b)",
     re.IGNORECASE,
 )
 _DOTENV_TARGET = re.compile(r"(?<![\w/\\.])\.env\b(?!\.(?:example|sample|template|dist)\b)", re.IGNORECASE)
 _GENERIC_TARGET = re.compile(
-    r"\b(?:credentials?|api[ _-]?keys?|secrets?|passwords?"
-    r"|(?:access|auth|api|bearer|secret|refresh) tokens?)\b",
+    r"\b(?:credentials?|api(?:[_-]|\s+)?keys?|secrets?|passwords?"
+    r"|(?:access|auth|api|bearer|secret|refresh)\s+tokens?)\b",
     re.IGNORECASE,
 )
 # A sentence boundary ends the look-back; dots inside paths do not.
@@ -59,6 +62,18 @@ _SENTENCE_BOUNDARY = re.compile(r"[\n!?;]|\.(?=\s|$)")
 _THROUGH_LAST_BOUNDARY = re.compile(r".*(?:[\n!?;]|\.(?=\s|$))", re.DOTALL)
 _VERB_RE = re.compile(_VERBS, re.IGNORECASE)
 _EXFIL_VERB_RE = re.compile(_EXFIL_VERBS, re.IGNORECASE)
+# A read verb whose object is the ".env" that follows (articles and
+# possessives may intervene; "copy .env.example to .env" does not qualify).
+_DOTENV_READ_BEFORE = re.compile(
+    r"\b(?:read|open|load|get|fetch|grab|collect|retrieve|extract|copy|access|parse|source|take)\s+"
+    r"(?:(?:the|your|my|our|their|this|that|local|project|contents\s+of(?:\s+the)?)\s+)*[`'\"]?$",
+    re.IGNORECASE,
+)
+# Negation immediately before a verb: "never send", "do not send", "don't ever send".
+_NEGATED_BEFORE_VERB = re.compile(
+    r"(?:\b(?:never|not|cannot|dont|without|avoid(?:ing)?)|n['\u2019]t)\s+(?:(?:ever|accidentally)\s+)?$",
+    re.IGNORECASE,
+)
 # Agent-directed frames immediately before the verb: a vocative or an obligation.
 _DIRECTIVE_BEFORE_VERB = re.compile(
     r"(?:\b(?:assistant|agent|model|ai|claude)\s*[,:]?\s*"
@@ -80,9 +95,11 @@ _REDIRECT = (
     r"\b(?:call|invoke|execute|use)\s+(?:the\s+)?(?:other\s+|another\s+)?"
     r"(?:[\w.-]+\s+)?tools?\b|\btools/call\b"
 )
+# Any run of whitespace separates phrase words, so doubled spaces, tabs and
+# newlines do not split a phrase.
 _INSTRUCTION_OVERRIDE = re.compile(
-    r"\b(?:ignore (?:all |any |the |your )?(?:previous|prior|above)"
-    r"|(?:disregard|forget) (?:all |any |the |your )?(?:previous|prior|above))\b",
+    r"\b(?:ignore\s+(?:(?:all|any|the|your)\s+)?(?:previous|prior|above)"
+    r"|(?:disregard|forget)\s+(?:(?:all|any|the|your)\s+)?(?:previous|prior|above))\b",
     re.IGNORECASE,
 )
 _TOOL_REDIRECT = re.compile(
@@ -114,13 +131,28 @@ def _frames_before(text: str, position: int, verbs: re.Pattern[str]) -> list[str
     return [window[: match.start()] for match in verbs.finditer(window)]
 
 
+def _unnegated(window: str, verbs: re.Pattern[str]) -> bool:
+    return any(not _NEGATED_BEFORE_VERB.search(window[: verb.start()]) for verb in verbs.finditer(window))
+
+
+def dotenv_hunt(text: str, start: int, end: int) -> bool:
+    """True when an outbound verb in the same sentence directs ``text[start:end]`` (a ".env")."""
+    window, _ = _same_sentence_before(text, start)
+    if _unnegated(window, _EXFIL_VERB_RE):
+        return True
+    reader = _DOTENV_READ_BEFORE.search(window)
+    if reader is None or _NEGATED_BEFORE_VERB.search(window[: reader.start()]):
+        return False
+    return _unnegated(_same_sentence_after(text, end), _EXFIL_VERB_RE)
+
+
 def credential_hunt(text: str) -> bool:
     """True when a verb directs the reader toward a secret path, name, or store."""
     for target in _CONCRETE_TARGET.finditer(text):
         if _frames_before(text, target.start(), _VERB_RE):
             return True
     for target in _DOTENV_TARGET.finditer(text):
-        if _frames_before(text, target.start(), _EXFIL_VERB_RE):
+        if dotenv_hunt(text, *target.span()):
             return True
     for target in _GENERIC_TARGET.finditer(text):
         frames = _frames_before(text, target.start(), _VERB_RE)

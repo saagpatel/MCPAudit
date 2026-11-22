@@ -21,10 +21,10 @@ from mcp_audit.normalize import first_obfuscation, normalize_text, obfuscation_c
 from mcp_audit.redaction import marked_excerpt_parts, redact_text, redacted_excerpt, trim_excerpt_context
 from mcp_audit.rules.result_injection import (
     _DOTENV_TARGET,
-    _EXFIL_VERB_RE,
     _HOME,
     _VERB_RE,
     _frames_before,
+    dotenv_hunt,
 )
 
 # Unicode characters used for hidden directives
@@ -70,9 +70,20 @@ _STATIC_PHRASES: dict[str, tuple[str, ...]] = {
 }
 
 
+# Any run of whitespace (Unicode included) separates phrase words, so doubled
+# spaces, tabs and newlines cannot split a phrase. Spans stay on the scanned text.
+_STATIC_PHRASE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    name: tuple(
+        re.compile(r"(?u:\s+)".join(map(re.escape, phrase.split(" "))), re.IGNORECASE | re.ASCII)
+        for phrase in phrases
+    )
+    for name, phrases in _STATIC_PHRASES.items()
+}
+
+
 def _static_span(name: str, text: str) -> tuple[int, int] | None:
-    for phrase in _STATIC_PHRASES[name]:
-        match = re.search(re.escape(phrase), text, re.IGNORECASE | re.ASCII)
+    for pattern in _STATIC_PHRASE_PATTERNS[name]:
+        match = pattern.search(text)
         if match is not None:
             return match.span()
     return None
@@ -102,7 +113,7 @@ _STATIC_CONCRETE_TARGET = re.compile(
     r"|(?-i:\b(?:GITHUB_TOKEN|GH_TOKEN|AWS_SECRET_ACCESS_KEY|AWS_ACCESS_KEY_ID|AWS_SESSION_TOKEN"
     r"|OPENAI_API_KEY|ANTHROPIC_API_KEY|NPM_TOKEN|SLACK_TOKEN|DATABASE_URL)\b)"
     r"|(?-i:\$\{?(?:[A-Z_][A-Z0-9_]*_)?(?:TOKEN|SECRET|API_KEY|PASSWORD|CREDENTIALS)\}?)"
-    r"|\b(?:os\.environ|process\.env|environment variables?|env vars?|shell history)\b)",
+    r"|\b(?:os\.environ|process\.env|environment\s+variables?|env\s+vars?|shell\s+history)\b)",
     re.IGNORECASE,
 )
 
@@ -113,7 +124,7 @@ def _credential_hunts(text: str) -> Iterator[tuple[int, int]]:
         if _frames_before(text, target.start(), _VERB_RE):
             yield target.span()
     for target in _DOTENV_TARGET.finditer(text):
-        if _frames_before(text, target.start(), _EXFIL_VERB_RE):
+        if dotenv_hunt(text, *target.span()):
             yield target.span()
 
 
