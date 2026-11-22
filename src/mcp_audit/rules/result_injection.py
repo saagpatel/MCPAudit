@@ -66,7 +66,7 @@ _EXFIL_VERB_RE = re.compile(_EXFIL_VERBS, re.IGNORECASE)
 # possessives may intervene; "copy .env.example to .env" does not qualify).
 _DOTENV_READ_BEFORE = re.compile(
     r"\b(?:read|open|load|get|fetch|grab|collect|retrieve|extract|copy|access|parse|source|take)\s+"
-    r"(?:(?:the|your|my|our|their|this|that|local|project|contents\s+of(?:\s+the)?)\s+)*[`'\"]?$",
+    r"(?:(?:the|your|my|our|their|this|that|local|project|contents\s+of)\s+){0,4}[`'\"]?$",
     re.IGNORECASE,
 )
 # Negation immediately before a verb: "never send", "do not send", "don't ever send".
