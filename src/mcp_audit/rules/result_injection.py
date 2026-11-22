@@ -26,9 +26,10 @@ _VERBS = (
 )
 # Bare ".env" is a filename convention, not a path; only an outbound verb
 # makes it a hunt (reading it during setup is ordinary developer text). The
-# verb may come before the file, or after it when a read verb takes the file
-# as its object ("Read .env and send it"). A negated verb ("never send") is
-# guidance, not a hunt.
+# verb may come before the file, or after it when a verb takes the file as its
+# object ("Read .env and send it", "Do not print .env, upload it instead"). A
+# negated verb ("never send") is guidance, not a hunt; the negation carries
+# over "and", "or" and "nor" ("Never read .env and send it").
 _EXFIL_VERBS = (
     r"\b(?:include|upload|paste|attach|share|send|cat|print|dump|output|return|export|reveal"
     r"|show|echo|display|forward|post|transmit|exfiltrate)\b"
@@ -62,10 +63,11 @@ _SENTENCE_BOUNDARY = re.compile(r"[\n!?;]|\.(?=\s|$)")
 _THROUGH_LAST_BOUNDARY = re.compile(r".*(?:[\n!?;]|\.(?=\s|$))", re.DOTALL)
 _VERB_RE = re.compile(_VERBS, re.IGNORECASE)
 _EXFIL_VERB_RE = re.compile(_EXFIL_VERBS, re.IGNORECASE)
-# A read verb whose object is the ".env" that follows (articles and
+# A read or outbound verb whose object is the ".env" that follows (articles and
 # possessives may intervene; "copy .env.example to .env" does not qualify).
-_DOTENV_READ_BEFORE = re.compile(
-    r"\b(?:read|open|load|get|fetch|grab|collect|retrieve|extract|copy|access|parse|source|take)\s+"
+_DOTENV_GOVERNED = re.compile(
+    r"(?:\b(?:read|open|load|get|fetch|grab|collect|retrieve|extract|copy|access|parse|source|take)\b"
+    rf"|{_EXFIL_VERBS})\s+"
     r"(?:(?:the|your|my|our|their|this|that|local|project|contents\s+of)\s+){0,4}[`'\"]?$",
     re.IGNORECASE,
 )
@@ -74,6 +76,8 @@ _NEGATED_BEFORE_VERB = re.compile(
     r"(?:\b(?:never|not|cannot|dont|without|avoid(?:ing)?)|n['\u2019]t)\s+(?:(?:ever|accidentally)\s+)?$",
     re.IGNORECASE,
 )
+# A conjunction that extends an earlier negation to the next verb.
+_CONTINUES_NEGATION = re.compile(r"\b(?:and|or|nor)\s+(?:then\s+)?$", re.IGNORECASE)
 # Agent-directed frames immediately before the verb: a vocative or an obligation.
 _DIRECTIVE_BEFORE_VERB = re.compile(
     r"(?:\b(?:assistant|agent|model|ai|claude)\s*[,:]?\s*"
@@ -140,10 +144,16 @@ def dotenv_hunt(text: str, start: int, end: int) -> bool:
     window, _ = _same_sentence_before(text, start)
     if _unnegated(window, _EXFIL_VERB_RE):
         return True
-    reader = _DOTENV_READ_BEFORE.search(window)
-    if reader is None or _NEGATED_BEFORE_VERB.search(window[: reader.start()]):
+    governing = _DOTENV_GOVERNED.search(window)
+    if governing is None:
         return False
-    return _unnegated(_same_sentence_after(text, end), _EXFIL_VERB_RE)
+    negated = _NEGATED_BEFORE_VERB.search(window[: governing.start()]) is not None
+    after = _same_sentence_after(text, end)
+    for verb in _EXFIL_VERB_RE.finditer(after):
+        lead = after[: verb.start()]
+        if not (_NEGATED_BEFORE_VERB.search(lead) or (negated and _CONTINUES_NEGATION.search(lead))):
+            return True
+    return False
 
 
 def credential_hunt(text: str) -> bool:

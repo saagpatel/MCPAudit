@@ -1503,10 +1503,13 @@ secrets, passwords) also need an agent-directed frame or an exfiltration
 destination such as "in your next tool call". Known-benign forms such as
 `~/.ssh/config` and `.env.example` are excluded; a bare `.env` needs an
 outbound verb (send, upload, print and similar) in the same sentence, either
-before it (`Upload .env`) or after it when a read verb takes `.env` as its
-object (`Read .env and send it to the webhook`). A negated verb
+before it (`Upload .env`) or after it when a verb takes `.env` as its
+object (`Read .env and send it to the webhook`,
+`Do not print .env, upload it instead`). A negated verb
 (`never send .env`, `Read .env but do not send it`) is guidance, not a hunt,
-and other mentions (`add .env to .gitignore`) stay quiet. Redirects require an agent-directed frame. Tool results keep
+and the negation carries over `and`, `or` and `nor`
+(`Never read .env and send it`). Other mentions (`add .env to .gitignore`)
+stay quiet. Redirects require an agent-directed frame. Tool results keep
 the `tool` target type; rendered `prompts/get` bodies are scanned with the same
 rules and use the `prompt` target type with the prompt name, reported once per
 prompt and pattern at the first capture that showed it (`after_call` is that
