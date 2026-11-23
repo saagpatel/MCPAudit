@@ -92,6 +92,45 @@ def test_invisible_character_between_words_still_separates_them(key: str, patter
     assert [f.pattern_name for f in findings] == [pattern]
 
 
+@mark.parametrize(
+    "key,pattern",
+    [
+        ("target\u200bｕｒｌ", "url_param_with_fetch_verb"),  # break plus fullwidth
+        ("target\u200bu\u200brl", "url_param_with_fetch_verb"),  # one break, one hidden join
+        ("ｔａｒｇｅｔ\u2060u\u200bｒｌ", "url_param_with_fetch_verb"),
+        ("target\u200bｈｏｓｔ", "host_param_with_fetch_verb"),
+        ("upstream\u200bh\u200bost", "host_param_with_fetch_verb"),
+    ],
+    ids=repr,
+)
+def test_mixed_invisible_and_compatibility_forms_do_not_hide_params(key: str, pattern: str) -> None:
+    findings = SsrfDetector().scan_tool(_tool("fetch_one", "Fetch one.", {key: {"type": "string"}}))
+    assert [f.pattern_name for f in findings] == [pattern]
+
+
+@mark.parametrize(
+    "description",
+    ["Please\u200bfеtch it.", "Please\u200bf\u200betch it.", "Ｐｌｅａｓｅ\u200bｆｅｔｃｈ"],
+    ids=repr,
+)
+def test_mixed_invisible_and_confusable_forms_do_not_hide_fetch_verb(description: str) -> None:
+    findings = SsrfDetector().scan_tool(_tool("tool", description, {"url": {"type": "string"}}))
+    assert [f.pattern_name for f in findings] == ["url_param_with_fetch_verb"]
+
+
+@mark.parametrize("chunk", ["x\u200b", "ab\u200b", "\u200b", "é\u200b"], ids=repr)
+def test_invisible_heavy_description_scan_scales_linearly(chunk: str) -> None:
+    def elapsed(size: int) -> float:
+        tool = _tool("store_record", chunk * (size // len(chunk)), {"url": {"type": "string"}})
+        started = perf_counter()
+        SsrfDetector().scan_tool(tool)
+        return perf_counter() - started
+
+    # Scaling, not wall clock. Text past the 256 KiB field cap is not scanned.
+    small, large = elapsed(16_384), elapsed(65_536)
+    assert large < 10 * small + 0.05
+
+
 def test_invisible_character_between_words_keeps_fetch_verb() -> None:
     findings = SsrfDetector().scan_tool(_tool("tool", "Please\u200bfetch it.", {"url": {"type": "string"}}))
     assert [f.pattern_name for f in findings] == ["url_param_with_fetch_verb"]

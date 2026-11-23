@@ -20,7 +20,7 @@ from mcp_audit.models import (
     SsrfSeverity,
     ToolInfo,
 )
-from mcp_audit.normalize import normalize_text
+from mcp_audit.normalize import invisible_class, normalize_text
 from mcp_audit.redaction import redacted_excerpt
 from mcp_audit.text_limits import bounded_text
 
@@ -114,22 +114,51 @@ def _split_words(text: str) -> list[str]:
     return _WORD_RE.findall("".join(spaced).lower())
 
 
-def _word_tokens(text: str) -> list[str]:
-    """Tokens of the raw text, plus any new tokens of its normalized form.
+# Longest token any caller matches exactly or by prefix ("idempotency", "credential").
+_MAX_JOINED_TOKEN = 12
+_ALNUM_RUN_RE = re.compile(r"[A-Za-z0-9\x00]+")
 
-    Raw tokens treat any non-alphanumeric character, invisible ones included, as
-    a word break, so ``target\u200burl`` still yields ``url``. Normalized tokens
-    (NFKC, invisible codepoints removed, curated confusables folded) join a word
-    an invisible character split, so ``u\u200brl`` also yields ``url``, and
-    fullwidth or lookalike letters fold to ASCII. Callers keep the raw text for
-    evidence.
+
+def _joined_runs(marked: str) -> Iterator[str]:
+    """Short runs of adjacent pieces that invisible characters (``\x00``) split.
+
+    Any invisible may be a word break or nothing, so ``target\u200bu\u200brl``
+    yields ``url``. Runs are capped at ``_MAX_JOINED_TOKEN`` characters, which
+    keeps the cost linear in the text however many invisibles it holds.
+    """
+    for chunk in _ALNUM_RUN_RE.findall(marked):
+        if "\x00" not in chunk:
+            continue
+        pieces = [piece.lower() for piece in chunk.split("\x00") if piece]
+        for first, joined in enumerate(pieces):
+            following = first + 1
+            while following < len(pieces) and len(joined) + len(pieces[following]) <= _MAX_JOINED_TOKEN:
+                joined += pieces[following]
+                following += 1
+                yield joined
+
+
+def _word_tokens(text: str) -> list[str]:
+    """Tokens of the raw text, then any new tokens of its normalized readings.
+
+    Raw tokens treat any non-alphanumeric character, invisible ones included,
+    as a word break, so ``target\u200burl`` yields ``url``. The normalized
+    readings fold NFKC compatibility forms and curated confusables to ASCII and
+    then treat each invisible codepoint as a word break, as nothing, or (for
+    short runs) as either, so ``u\u200brl``, ``target\u200bｕｒｌ`` and
+    ``target\u200bu\u200brl`` all yield ``url``. Callers keep the raw text
+    for evidence.
     """
     raw = _split_words(text)
-    normalized = normalize_text(text)
-    if normalized == text:
+    if text.isascii():  # ASCII has no invisible or compatibility codepoints
         return raw
-    seen = set(raw)
-    return raw + [token for token in _split_words(normalized) if token not in seen]
+    # Mark invisibles with NUL (kept by normalize_text) before folding the rest.
+    marked = normalize_text("".join("\x00" if invisible_class(char) else char for char in text))
+    tokens = dict.fromkeys(raw)
+    for reading in (marked.replace("\x00", " "), marked.replace("\x00", "")):
+        tokens.update(dict.fromkeys(_split_words(reading)))
+    tokens.update(dict.fromkeys(_joined_runs(marked)))
+    return list(tokens)
 
 
 def _tokens(text: str) -> list[str]:

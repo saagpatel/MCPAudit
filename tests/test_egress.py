@@ -248,11 +248,31 @@ def test_credential_param_names_are_detected(param: str) -> None:
         "bear\u00ader",
         "token\u200bvalue",
         "user\u200bsecret",
+        "ｔｏｋｅｎ\u200bvalue",
+        "user\u200bs\u200becret",
     ],
     ids=repr,
 )
 def test_invisible_or_compatibility_characters_do_not_hide_credential_params(param: str) -> None:
     assert _is_credential_token_set(_key_tokens(param))
+
+
+def test_mixed_form_credential_param_raises_trusted_destination_residual() -> None:
+    audit = _audit(
+        tools=[_tool("send", "Send to the API.", {"ｔｏｋｅｎ\u200bvalue": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://docs.internal.example/data")],
+    )
+    findings = EgressDetector(allowlist={"internal.example"}).scan_server(audit)
+    assert [(f.kind, f.severity) for f in findings] == [
+        (EgressKind.TRUSTED_DESTINATION_RESIDUAL, EgressSeverity.MEDIUM)
+    ]
+
+
+@pytest.mark.parametrize("key", ["target\u200bｕｒｌ", "target\u200bu\u200brl"], ids=repr)
+def test_mixed_form_url_param_is_unbounded_egress(key: str) -> None:
+    audit = _audit(tools=[_tool("fetch_one", "Fetch one.", {key: {"type": "string"}})])
+    findings = EgressDetector(allowlist=set()).scan_server(audit)
+    assert [(f.kind, f.target_name) for f in findings] == [(EgressKind.UNBOUNDED_EGRESS, "fetch_one")]
 
 
 def test_zero_width_url_param_is_unbounded_egress() -> None:
