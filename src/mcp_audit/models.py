@@ -557,6 +557,26 @@ class SsrfFinding(ReferencedFinding):
     evidence: list[str]  # param names, fetch verbs, or URI scheme/template signals
     description: str  # human-readable explanation
 
+    # Destination host resolved once when the detector classified the finding: a host for
+    # a fixed destination, None for a caller-controlled one. Private, so it never reaches
+    # the report, SARIF or the published JSON schema. Unset on findings built elsewhere.
+    _destination: str | None = PrivateAttr(default=None)
+    _destination_resolved: bool = PrivateAttr(default=False)
+
+    def resolve_destination(self, host: str | None) -> Self:
+        """Record the classified destination host (None: caller-controlled); returns self."""
+        self._destination = host
+        self._destination_resolved = True
+        return self
+
+    @property
+    def destination_resolved(self) -> bool:
+        return self._destination_resolved
+
+    @property
+    def destination_host(self) -> str | None:
+        return self._destination
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def rule_id(self) -> str:
