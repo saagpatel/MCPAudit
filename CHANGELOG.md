@@ -55,7 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   than searching the raw text for `://`, so a URI with a tab, CR or LF before
   its `//` (`https:\t//evil.example/{x}`), which SSRF already classified as a
   path template on that host, is reported by egress as a fixed destination
-  (MCP040) instead of HIGH unbounded egress (MCP041).
+  (MCP040) instead of HIGH unbounded egress (MCP041). The egress
+  credential-bearing check reads the same parsed authority, so a templated
+  userinfo split that way (`https:\t//user:{password}@host/x`) still keeps the
+  MEDIUM trusted-destination residual on an allowlisted host.
 - SSRF and egress now agree on the `github:owner/repo` shorthand. SSRF already
   called `github:owner/{repo}` a low path template on github.com, but egress
   found no host and reported HIGH unbounded egress (MCP041). The shared host

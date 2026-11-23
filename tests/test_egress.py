@@ -153,6 +153,19 @@ def test_egress_reads_ssrf_destination_without_reparsing(monkeypatch: pytest.Mon
     )
 
 
+@pytest.mark.parametrize("control", ["", "\t", "\r", "\n"], ids=repr)
+def test_control_character_userinfo_template_keeps_credential_residual(control: str) -> None:
+    # The host and the templated credential are read from the same parsed authority, so an
+    # allowlisted host keeps its MEDIUM residual however the "//" is split.
+    uri = f"https:{control}//user:{{password}}@trusted.example/{{x}}"
+    findings = EgressDetector(allowlist={"trusted.example"}).scan_server(
+        _audit(resources=[ResourceInfo(uri=uri)])
+    )
+    assert [(f.kind, f.severity, f.destination_host) for f in findings] == [
+        (EgressKind.TRUSTED_DESTINATION_RESIDUAL, EgressSeverity.MEDIUM, "trusted.example")
+    ]
+
+
 def test_control_character_authority_agrees_with_ssrf() -> None:
     # SSRF reads https:\t//evil.example/{x} as a path template on evil.example; egress agrees.
     audit = _audit(resources=[ResourceInfo(uri="https:\t//evil.example/{x}")])

@@ -165,12 +165,13 @@ def _uri_templates_userinfo(uri: str) -> bool:
     request whose host is otherwise fixed — the credential-bearing signal for the
     trusted-destination residual. The host authority itself is ignored here.
     """
-    if "://" not in uri:
-        return False
     try:
-        netloc = urlparse(uri).netloc
+        parsed = urlparse(uri)
     except ValueError:
         return False
+    # The parsed authority, as ssrf.fixed_host_from_uri reads it: urlparse drops tab, CR
+    # and LF, so "https:\t//u:{pw}@host/x" templates its userinfo too.
+    netloc = parsed.netloc if parsed.scheme else ""
     if "@" not in netloc:
         return False
     userinfo = netloc.rsplit("@", 1)[0]
