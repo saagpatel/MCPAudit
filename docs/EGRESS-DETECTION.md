@@ -30,7 +30,10 @@ disagree about what host a target resolves to.
 | medium / low | `trusted_destination_residual` (MCP042) | An *allowlisted* fixed host that is still not automatically safe (see below). |
 
 An empty allowlist trusts nothing, so every fixed external destination is reported for
-review. A fixed destination is deduplicated per `(target, host)`.
+review. A fixed destination is deduplicated per `(target, host)`. Hosts come from the same
+lookup SSRF allowlisting uses, which resolves the authority-less `github:owner/repo`
+shorthand to github.com, so `github:owner/{repo}` is a fixed github.com destination, not
+unbounded egress.
 
 ## The trusted-destination residual (the Cowork lesson)
 
