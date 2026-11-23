@@ -48,6 +48,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SSRF and egress now agree on the `github:owner/repo` shorthand. SSRF already
+  called `github:owner/{repo}` a low path template on github.com, but egress
+  found no host and reported HIGH unbounded egress (MCP041). The shared host
+  lookup now resolves the shorthand to github.com, so egress reports it exactly
+  like `https://github.com/owner/{repo}` (MCP040 outside the allowlist, nothing
+  or a residual when github.com is allowlisted), and `--ssrf-allowlist
+  github.com` suppresses it. A fixed `github:owner/repo` resource is now a
+  github.com egress destination too. Only a clean shorthand qualifies (no
+  authority, `//` or backslash once tab, CR and LF are removed), so a hidden
+  authority such as `github:\n//{host}/repo` stays high and unsuppressible.
+- A tool whose name looks like a URI (`https://trusted.example/fetch`) no
+  longer gets a fixed host from its name. `--ssrf-allowlist` could suppress
+  its SSRF finding and egress could downgrade its HIGH unbounded egress when
+  that host was allowlisted. Only resource findings resolve a host now.
 - A zero-width, fullwidth or other invisible character inside a tool parameter
   name (`u\u200brl`) or a fetch verb no longer hides it from SSRF and egress.
   Parameter names, tool names and descriptions are tokenized as written and

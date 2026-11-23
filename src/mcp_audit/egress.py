@@ -46,6 +46,7 @@ from mcp_audit.models import (
 )
 from mcp_audit.ssrf import (
     _REMOTE_SCHEMES,
+    _finding_fixed_host,
     _key_tokens,
     _split_words,
     fixed_host_from_uri,
@@ -202,7 +203,7 @@ class EgressDetector:
 
         # 1. Caller-controlled (unbounded) targets and any fixed hosts the SSRF pass surfaced.
         for ssrf in audit.ssrf_findings:
-            host = fixed_host_from_uri(ssrf.target_name)
+            host = _finding_fixed_host(ssrf)
             if host is None:
                 findings.append(
                     EgressFinding(

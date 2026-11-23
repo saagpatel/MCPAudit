@@ -595,6 +595,13 @@ def parse_host_allowlist(raw: str | None) -> set[str]:
     return {h.strip().lower() for h in raw.split(",") if h.strip()}
 
 
+# Authority-less shorthands whose destination host the scheme implies, as in the
+# npm-style ``github:owner/repo``. Everything after the colon is a path on that host.
+_IMPLIED_HOSTS = {"github": "github.com"}
+# Characters urlparse removes anywhere in a URL before splitting it.
+_URI_STRIPPED_CONTROLS = str.maketrans("", "", "\t\r\n")
+
+
 def fixed_host_from_uri(uri: str) -> str | None:
     """Extract a fixed (non-templated) host from a URI string, or None.
 
@@ -602,11 +609,24 @@ def fixed_host_from_uri(uri: str) -> str | None:
     authority, or a caller-templated host authority (``{host}``) — a caller-steerable
     target is never allowlistable. Any userinfo is stripped before the host is read,
     and a trailing ``:port`` (or an IPv6 literal's brackets) is removed. The returned
-    host is lowercased.
+    host is lowercased. An authority-less shorthand (``github:owner/{repo}``) resolves
+    to the host its scheme implies, so a template there is a path template, as SSRF
+    classifies it.
 
     Shared host-truth for both SSRF allowlisting and egress destination analysis, so
     the two detectors never disagree about what host a target resolves to.
     """
+    # Only a clean shorthand gets the implied host. Read the scheme and authority with
+    # the parser scan_resource uses, which drops embedded tab, CR and LF, so
+    # "github:\n//{host}/x" has a (templated) authority; and refuse any "//" or backslash
+    # that another parser could read as one. Anything else keeps the behavior below,
+    # which never yields an allowlistable host for an authority-less URI.
+    parts = split_uri(uri)
+    implied = _IMPLIED_HOSTS.get(parts.scheme.lower())
+    if implied is not None and not parts.netloc:
+        cleaned = uri.translate(_URI_STRIPPED_CONTROLS)
+        if "//" not in cleaned and "\\" not in cleaned:
+            return implied
     if "://" not in uri:
         return None
     try:
@@ -631,7 +651,12 @@ def _finding_fixed_host(finding: SsrfFinding) -> str | None:
     authority yield a host. Tool findings (caller-controlled URL/host params) and
     findings whose host authority is itself templated (``{host}``) yield None — a
     caller-steerable target is never allowlistable, so it can never be suppressed.
+    A tool's ``target_name`` is its name, which never constrains where it connects,
+    so a tool named ``github:fetch`` or ``https://trusted.example/fetch`` stays
+    caller-controlled. Shared by SSRF allowlisting and egress.
     """
+    if finding.target_type is not CapabilityTarget.RESOURCE:
+        return None
     return fixed_host_from_uri(finding.target_name)
 
 

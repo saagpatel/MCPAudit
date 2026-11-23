@@ -89,6 +89,48 @@ def test_empty_allowlist_flags_every_fixed_destination() -> None:
     assert findings[0].kind is EgressKind.DESTINATION_OUTSIDE_ALLOWLIST
 
 
+@pytest.mark.parametrize(
+    "shorthand,https_form",
+    [
+        ("github:owner/{repo}", "https://github.com/owner/{repo}"),
+        ("github:owner/repo", "https://github.com/owner/repo"),
+    ],
+)
+@pytest.mark.parametrize("allowlist", [set(), {"github.com"}], ids=["no-allowlist", "github-allowlisted"])
+def test_github_shorthand_matches_its_https_form(
+    shorthand: str, https_form: str, allowlist: set[str]
+) -> None:
+    # SSRF classifies github:owner/{repo} as a path template on github.com; egress must agree
+    # instead of calling it an unbounded, caller-chosen destination.
+    def classify(uri: str) -> list[tuple[EgressKind, EgressSeverity, str | None]]:
+        findings = EgressDetector(allowlist=allowlist).scan_server(_audit(resources=[ResourceInfo(uri=uri)]))
+        return [(f.kind, f.severity, f.destination_host) for f in findings]
+
+    assert classify(shorthand) == classify(https_form)
+    assert all(kind is not EgressKind.UNBOUNDED_EGRESS for kind, _, _ in classify(shorthand))
+
+
+@pytest.mark.parametrize(
+    "uri", ["github:\n//{host}/repo", "github:\r//{host}/repo", "github:\t//{host}/repo"], ids=repr
+)
+@pytest.mark.parametrize("allowlist", [set(), {"github.com"}], ids=["no-allowlist", "github-allowlisted"])
+def test_control_hidden_github_authority_stays_unbounded(uri: str, allowlist: set[str]) -> None:
+    findings = EgressDetector(allowlist=allowlist).scan_server(_audit(resources=[ResourceInfo(uri=uri)]))
+    assert [(f.kind, f.severity) for f in findings] == [(EgressKind.UNBOUNDED_EGRESS, EgressSeverity.HIGH)]
+
+
+@pytest.mark.parametrize("name", ["github:fetch", "https://trusted.com/fetch"])
+@pytest.mark.parametrize(
+    "allowlist", [set(), {"github.com", "trusted.com"}], ids=["no-allowlist", "names-allowlisted"]
+)
+def test_tool_named_like_a_uri_stays_unbounded(name: str, allowlist: set[str]) -> None:
+    audit = _audit(tools=[_tool(name, "Fetch a URL.", {"url": {"type": "string"}})])
+    findings = EgressDetector(allowlist=allowlist).scan_server(audit)
+    assert [(f.kind, f.severity, f.destination_host) for f in findings] == [
+        (EgressKind.UNBOUNDED_EGRESS, EgressSeverity.HIGH, None)
+    ]
+
+
 def test_local_scheme_resource_is_not_egress() -> None:
     audit = _audit(resources=[ResourceInfo(uri="file:///etc/passwd")])
     assert EgressDetector(allowlist=set()).scan_server(audit) == []
