@@ -82,14 +82,28 @@ class TestResolver:
         ("uvx", ["-p", "3.12", "--with", "dep==2", "pkg==1"], [("pkg", "1"), ("dep", "2")]),
         ("uvx", ["--python=3.12", "mcp[cli]==1.2.0"], [("mcp", "1.2.0")]),
         ("uvx", ["--with", "pkg==1", "pkg==1"], [("pkg", "1")]),  # each ref once
+        ("uvx", ["-w", "dep==2", "pkg==1"], [("pkg", "1"), ("dep", "2")]),  # -w is --with
+        ("uv", ["run", "-w", "dep==2", "main.py"], [("dep", "2")]),
+        ("uv", ["run", "--with", "pkg[a,b]==1.0", "main.py"], [("pkg", "1.0")]),  # commas in extras
+        (
+            "uv",
+            ["run", "--with", 'a==1,pkg[x,y]==2; python_version in "3.12,3.13",c==3', "main.py"],
+            [("a", "1"), ("pkg", "2"), ("c", "3")],
+        ),
         # npm: only exec/x launch a registry package.
         ("npm", ["exec", "--", "pkg@1.0.0"], [("pkg", "1.0.0")]),
         ("npm", ["x", "-y", "--package", "pkg@1.0.0", "--", "cmd"], [("pkg", "1.0.0")]),
+        ("npm", ["--package", "pkg@1.2.3", "exec", "cmd"], [("pkg", "1.2.3")]),  # options before exec
+        ("npm", ["--package=pkg@1.2.3", "exec", "cmd"], [("pkg", "1.2.3")]),
+        ("npm", ["-p", "pkg@1.2.3", "x", "--", "cmd"], [("pkg", "1.2.3")]),
         ("npm", ["run", "build"], []),
         ("npm", ["start"], []),
         # pipx run: --spec or the first positional; other subcommands launch nothing.
         ("pipx", ["run", "--spec", "pkg==1.0", "cmd"], [("pkg", "1.0")]),
         ("pipx", ["run", "--python", "3.12", "pkg==1.0"], [("pkg", "1.0")]),
+        ("pipx", ["run", "--with", "dep==2", "--cooldown", "7", "pkg==1.0"], [("pkg", "1.0"), ("dep", "2")]),
+        ("uvx", ["-C", "k=v", "-P", "dep", "pkg==1"], [("pkg", "1")]),  # value options from uv's help
+        ("npm", ["exec", "--loglevel", "warn", "--", "pkg@1.0.0"], [("pkg", "1.0.0")]),
         ("pipx", ["install", "pkg"], []),
     ],
     ids=lambda value: (
@@ -143,6 +157,18 @@ def test_uvx_at_version_is_captured_and_verified() -> None:
     assert [(f.kind, f.severity, f.package, f.version) for f in findings] == [
         (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH, "pkg", "0.6.2")
     ]
+
+
+@pytest.mark.parametrize(
+    "command,args",
+    [("uvx", ["-w", "dep==2", "pkg==1"]), ("npm", ["--package", "pkg@1.2.3", "exec", "cmd"])],
+    ids=["uvx -w", "npm --package before exec"],
+)
+def test_every_launched_package_is_captured(command: str, args: list[str]) -> None:
+    cfg = _cfg(command, args)
+    baseline = PackageVerifier(fetch=lambda ref: f"hash-{ref.name}").capture(cfg)
+    assert baseline == {ref.key(): f"hash-{ref.name}" for ref in resolve_package_refs(cfg)}
+    assert len(baseline) == (2 if command == "uvx" else 1)
 
 
 def test_uv_run_with_requirement_is_verified_not_the_script() -> None:

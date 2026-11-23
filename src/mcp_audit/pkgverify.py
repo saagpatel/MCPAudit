@@ -91,10 +91,24 @@ _ALLOWED_DOWNLOAD_HOSTS = frozenset({"registry.npmjs.org", "files.pythonhosted.o
 # Value flags per runner: options whose NEXT token is a value, so that token is
 # neither the package nor the launched command. Unknown options are treated as
 # boolean switches. Flags that name the package itself are listed separately.
-_NPM_VALUE_FLAGS = {"-c", "--call", "-w", "--workspace", "--registry", "--cache", "--prefix", "--userconfig"}
+# npm takes any config as "--key value"; these are the common value-taking ones.
+_NPM_VALUE_FLAGS = {
+    "-c",
+    "--call",
+    "-w",
+    "--workspace",
+    "--registry",
+    "--cache",
+    "--prefix",
+    "--userconfig",
+    "--loglevel",
+    "--node-options",
+    "--script-shell",
+}
 _NPM_PACKAGE_FLAGS = {"--package", "-p"}
 _UV_VALUE_FLAGS = {
     "--with",
+    "-w",  # short for --with
     "--with-editable",
     "--with-requirements",
     "--python",
@@ -131,8 +145,37 @@ _UV_VALUE_FLAGS = {
     "--no-group",
     "--package",
     "--from",
+    # Checked against `uv help tool run` and `uv help run` (uv 0.13.9).
+    "--config-setting",
+    "-C",
+    "--config-settings-package",
+    "--exclude-newer-package",
+    "--fork-strategy",
+    "--no-binary-package",
+    "--no-build-isolation-package",
+    "--no-build-package",
+    "--no-editable-package",
+    "--no-extra",
+    "--no-sources-package",
+    "--prerelease-package",
+    "--refresh-package",
+    "--reinstall-package",
+    "--upgrade-group",
+    "--upgrade-package",
+    "-P",
 }
-_PIPX_VALUE_FLAGS = {"--python", "--pip-args", "--index-url", "--spec"}
+# Checked against `pipx run --help` (pipx 1.18).
+_PIPX_VALUE_FLAGS = {
+    "--python",
+    "--python-args",
+    "--pip-args",
+    "--index-url",
+    "--spec",
+    "--with",
+    "--fetch-python",
+    "--cooldown",
+    "--backend",
+}
 
 _NPM_EXACT_VERSION = re.compile(r"v?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?")
 
@@ -244,21 +287,53 @@ def _parse_runner_args(args: list[str], value_flags: set[str]) -> _ParsedArgs:
     return parsed
 
 
+def _split_requirements(value: str) -> list[str]:
+    """Split a comma-separated requirement list, keeping commas inside extras or quotes.
+
+    ``a==1,pkg[x,y]==2; python_version in "3.12,3.13"`` is two requirements.
+    """
+    parts: list[str] = []
+    current: list[str] = []
+    depth = 0
+    quote: str | None = None
+    for char in value:
+        if quote is not None:
+            quote = None if char == quote else quote
+        elif char in "\"'":
+            quote = char
+        elif char == "[":
+            depth += 1
+        elif char == "]":
+            depth = max(0, depth - 1)
+        elif char == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+            continue
+        current.append(char)
+    parts.append("".join(current))
+    return [part.strip() for part in parts if part.strip()]
+
+
 def _with_refs(parsed: _ParsedArgs) -> list[PackageRef]:
-    """Registry packages uv installs alongside the command (``--with a==1,b``)."""
+    """Registry packages uv installs alongside the command (``--with a==1,b`` or ``-w``)."""
     refs: list[PackageRef] = []
-    for value in parsed.values.get("--with", []):
-        for requirement in value.split(","):
-            if requirement.strip():
+    for value in [*parsed.values.get("--with", []), *parsed.values.get("-w", [])]:
+        for requirement in _split_requirements(value):
+            if requirement:
                 name, version = _split_pypi_spec(requirement, at_version=True)
                 if name:
                     refs.append(PackageRef("pypi", name, version))
     return refs
 
 
-def _npm_refs(args: list[str]) -> list[PackageRef]:
+def _npm_package_values(parsed: _ParsedArgs) -> list[str]:
+    return [value for flag in ("--package", "-p") for value in parsed.values.get(flag, [])]
+
+
+def _npm_refs(args: list[str], outer_packages: list[str] | None = None) -> list[PackageRef]:
+    """``npx``/``npm exec`` args: ``--package`` (before or after ``exec``) or the first positional."""
     parsed = _parse_runner_args(args, _NPM_VALUE_FLAGS | _NPM_PACKAGE_FLAGS)
-    named = [v for flag in ("--package", "-p") for v in parsed.values.get(flag, [])]
+    named = [*(outer_packages or []), *_npm_package_values(parsed)]
     spec = named[0] if named else parsed.positional
     return [PackageRef("npm", *_split_npm_spec(spec))] if spec else []
 
@@ -291,7 +366,7 @@ def _resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
     - ``uvx`` and ``uv tool run``: the package (``--from`` or the command; ``pkg==1.0``
       and uv's ``pkg@1.0``) plus each ``--with`` requirement.
     - ``uv run``: only ``--with`` requirements; the command or script is local.
-    - ``pipx run``: the package (``--spec`` or the first positional).
+    - ``pipx run``: the package (``--spec`` or the first positional) plus ``--with``.
     """
     command = (server_config.command or "").rsplit("/", 1)[-1].lower()
     args = [str(a) for a in server_config.args]
@@ -299,8 +374,11 @@ def _resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
     if command == "npx":
         return _npm_refs(args)
     if command == "npm":
-        parsed = _parse_runner_args(args, _NPM_VALUE_FLAGS)
-        return _npm_refs(parsed.rest) if parsed.positional in {"exec", "x"} else []
+        # npm accepts its config options (--package among them) before the subcommand.
+        parsed = _parse_runner_args(args, _NPM_VALUE_FLAGS | _NPM_PACKAGE_FLAGS)
+        if parsed.positional not in {"exec", "x"}:
+            return []
+        return _npm_refs(parsed.rest, _npm_package_values(parsed))
     if command == "uvx":
         return _uv_tool_run_refs(args)
     if command == "uv":
@@ -316,7 +394,8 @@ def _resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
             return []
         run = _parse_runner_args(parsed.rest, _PIPX_VALUE_FLAGS)
         spec = run.values.get("--spec", [None])[0] or run.positional
-        return [PackageRef("pypi", *_split_pypi_spec(spec))] if spec else []
+        refs = [PackageRef("pypi", *_split_pypi_spec(spec))] if spec else []
+        return refs + _with_refs(run)
     return []
 
 

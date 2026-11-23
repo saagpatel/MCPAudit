@@ -52,8 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`--verify-artifacts`, MCP025/MCP026, and the checkup's auto-updating
   launch count). `uv run --with pkg==1.0 server.py` resolves `pkg` as a
   `--with` requirement and `uv run server.py` resolves nothing (it no longer
-  invents a PyPI package named `server.py`); `uvx`/`uv tool run` add their
-  `--with` requirements; `uvx pkg@0.6.2` is the exact version `0.6.2` and is
+  invents a PyPI package named `server.py`); `uvx`/`uv tool run`/`pipx run`
+  add their `--with`/`-w` requirements (a comma list, with commas inside extras
+  such as `pkg[a,b]==1.0` kept); `npm --package pkg@1.2.3 exec cmd` keeps the
+  package given before `exec`; `uvx pkg@0.6.2` is the exact version `0.6.2` and is
   now verified; option values such as `uvx -p 3.12` or `pipx run --python
   3.12` are no longer taken for the package; and `npm run`/`npm start` launch
   no registry package. Moving versions (`npx pkg@latest`, `pkg@^1.2.0`) are no

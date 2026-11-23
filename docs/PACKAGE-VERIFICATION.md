@@ -46,7 +46,7 @@ so this check compares the **registry-published hash** for the exact pinned
     package.
   - PyPI: `uvx` and `uv tool run` (`--from` or the command, plus each `--with`
     requirement), `uv run` (only its `--with` requirements: the command or script
-    it runs is local), and `pipx run` (`--spec` or the first positional).
+    it runs is local), and `pipx run` (`--spec` or the first positional, plus each `--with`).
 - **Implies a pin comparison.** Requires a baseline captured with
   `pin --verify-artifacts`; servers pinned without it are skipped with a warning.
 
