@@ -34,6 +34,22 @@ server-side request root such as `fetch`, `curl`, `wget`, `download`,
 network tool descriptions and would raise nearly every URL-parameter finding to
 high.
 
+Parameter names, tool names and descriptions are tokenized as written, where
+any non-alphanumeric character (an invisible one included) breaks a word, and
+again after folding NFKC compatibility forms (fullwidth letters) and the
+curated confusable lookalikes to ASCII, reading each invisible codepoint
+(zero-width, word joiner, BOM, soft hyphen, tag characters, variation
+selectors) both as a word break and as nothing. A word that contains an
+invisible codepoint is treated as adversarial: the URL and host tokens and the
+fetch-verb roots are also matched as substrings of its folded, invisible-free
+skeleton, so `u\u200brl`, `target\u200bu\u200brlValue`, `target\u200bｕｒｌ`
+and `Please\u200bf\u200betchsomething` are all caught. The cost is extra hits
+on such words (`gho\u200bst` counts as a host parameter, where `ghost` does
+not); words without invisible codepoints keep exact-token matching. Evidence still names the raw parameter, with
+invisible codepoints shown as `‹U+200B›`. Invisible codepoints and mixed-script
+confusables also raise `OBFUSCATED_METADATA`; fullwidth compatibility forms
+alone do not.
+
 At most one finding is emitted per tool, at the highest applicable severity:
 
 | Severity | Pattern | Condition |

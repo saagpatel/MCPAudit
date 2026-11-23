@@ -47,6 +47,7 @@ from mcp_audit.models import (
 from mcp_audit.ssrf import (
     _REMOTE_SCHEMES,
     _key_tokens,
+    _split_words,
     fixed_host_from_uri,
     host_in_allowlist,
 )
@@ -119,6 +120,25 @@ def _is_credential_token_set(tokens: set[str]) -> bool:
     if tokens & _CREDENTIAL_PARAM_TOKENS:
         return True
     return "key" in tokens and not (tokens & _IDENTIFIER_KEY_QUALIFIERS)
+
+
+# Words that make a param name credential-bearing, also matched as substrings when the name
+# hides them with invisible codepoints. Identifier qualifiers only suppress, so they never
+# join this vocabulary.
+_CREDENTIAL_VOCABULARY = frozenset(_CREDENTIAL_PARAM_TOKENS | {"key"})
+
+
+def _is_credential_param(key: str) -> bool:
+    """True if the name as written, or any normalized reading of it, is credential-bearing.
+
+    Checking the raw tokens on their own first means a qualifier that only folding produces
+    (``pr\u200bimary_key``, ``primаry_key`` with a Cyrillic ``а``) cannot cancel the bare
+    ``key`` match the raw text already has: obfuscation can add a credential match, never
+    remove one.
+    """
+    return _is_credential_token_set(set(_split_words(key))) or _is_credential_token_set(
+        _key_tokens(key, _CREDENTIAL_VOCABULARY)
+    )
 
 
 def _is_remote_uri(uri: str) -> bool:
@@ -241,7 +261,7 @@ class EgressDetector:
             if not isinstance(props, dict):
                 continue
             for key in props:
-                if _is_credential_token_set(_key_tokens(str(key))):
+                if _is_credential_param(str(key)):
                     return True
         return any(
             _uri_templates_userinfo(resource.uri)

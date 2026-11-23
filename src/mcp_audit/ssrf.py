@@ -9,7 +9,7 @@ metadata endpoints) — not that the server is exploitable.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -20,6 +20,7 @@ from mcp_audit.models import (
     SsrfSeverity,
     ToolInfo,
 )
+from mcp_audit.normalize import invisible_class, normalize_text
 from mcp_audit.redaction import redacted_excerpt
 from mcp_audit.text_limits import bounded_text
 
@@ -89,7 +90,7 @@ class _SchemaWalkResult:
     incomplete_reasons: list[str]
 
 
-def _word_tokens(text: str) -> list[str]:
+def _split_words(text: str) -> list[str]:
     """Split words and camel/acronym boundaries in one linear pass."""
     spaced: list[str] = []
     for index, char in enumerate(text):
@@ -113,12 +114,51 @@ def _word_tokens(text: str) -> list[str]:
     return _WORD_RE.findall("".join(spaced).lower())
 
 
+_ALNUM_RUN_RE = re.compile(r"[A-Za-z0-9\x00]+")
+
+
+def _word_tokens(text: str, vocabulary: Collection[str] = ()) -> list[str]:
+    """Tokens of the raw text, then any new tokens of its normalized readings.
+
+    Raw tokens treat any non-alphanumeric character, invisible ones included,
+    as a word break, so ``target\u200burl`` yields ``url``. For non-ASCII text,
+    NFKC compatibility forms and curated confusables are folded to ASCII and the
+    folded text is read twice, with each invisible codepoint as a word break and
+    as nothing (``u\u200brl`` yields ``url``).
+
+    A word that contains an invisible codepoint is adversarial, so any
+    ``vocabulary`` entry found as a substring of its folded, invisible-free,
+    lowercased skeleton is also a token: ``target\u200bu\u200brlValue`` yields
+    ``url`` and ``Please\u200bf\u200betchsomething`` yields ``fetch``. Clean
+    words keep exact-token matching. Callers pass only words that raise a
+    detection and keep the raw text for evidence.
+    """
+    raw = _split_words(text)
+    if text.isascii():  # ASCII has no invisible or compatibility codepoints
+        return raw
+    # Mark invisibles with NUL (kept by normalize_text) before folding the rest.
+    marked = normalize_text("".join("\x00" if invisible_class(char) else char for char in text))
+    tokens = dict.fromkeys(raw)
+    for reading in (marked.replace("\x00", " "), marked.replace("\x00", "")):
+        tokens.update(dict.fromkeys(_split_words(reading)))
+    if vocabulary:
+        for chunk in _ALNUM_RUN_RE.findall(marked):
+            if "\x00" in chunk:
+                skeleton = chunk.replace("\x00", "").lower()
+                tokens.update(dict.fromkeys(word for word in vocabulary if word in skeleton))
+    return list(tokens)
+
+
+# Words matched as substrings of obfuscated parameter names (see _word_tokens).
+_PARAM_VOCABULARY = frozenset(_URL_TOKENS | _HOST_TOKENS)
+
+
 def _tokens(text: str) -> list[str]:
-    return _word_tokens(text)
+    return _word_tokens(text, _FETCH_VERB_ROOTS)
 
 
-def _key_tokens(key: str) -> set[str]:
-    return set(_word_tokens(key))
+def _key_tokens(key: str, vocabulary: Collection[str] = _PARAM_VOCABULARY) -> set[str]:
+    return set(_word_tokens(key, vocabulary))
 
 
 def _is_url_param(key: str, prop: object) -> bool:

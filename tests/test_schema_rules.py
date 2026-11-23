@@ -136,6 +136,13 @@ def test_credential_header_in_conditional_and_array_branches(keyword: str, surfa
     assert [finding.kind for finding in scan_tool_schema(tool)] == ["credential_header"]
 
 
+@pytest.mark.parametrize("name", ["api\u200btoken", "pass\u200bw\u200bordHash", "ｓｅｃｒｅｔ"], ids=repr)
+def test_obfuscated_credential_name_mirrored_to_header(name: str) -> None:
+    schema = {"properties": {name: {"type": "string", "x-mcp-header": "X-Value"}}}
+    tool = ToolInfo.model_validate({"name": "fixture", "input_schema": schema})
+    assert [finding.kind for finding in scan_tool_schema(tool)] == ["credential_header"]
+
+
 def test_legacy_tuple_items_header_is_reachable() -> None:
     tool = ToolInfo(name="fixture", input_schema={"items": [{"type": "string", "x-mcp-header": "X-Value"}]})
     assert scan_tool_schema(tool) == []

@@ -48,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A zero-width, fullwidth or other invisible character inside a tool parameter
+  name (`u\u200brl`) or a fetch verb no longer hides it from SSRF and egress.
+  Parameter names, tool names and descriptions are tokenized as written and
+  again with fullwidth forms and confusables folded. In a word that contains
+  an invisible codepoint, the SSRF URL/host tokens and fetch roots, the egress
+  credential tokens and the `credential_header` credential words also match as
+  substrings, so `target\u200bu\u200brlValue` is caught; such words can get
+  extra hits (`gho\u200bst` is a host parameter). Clean words are unchanged,
+  and evidence still names the raw parameter with invisibles rendered. The same tokenizer feeds
+  the egress credential-parameter check and the `credential_header` schema rule.
 - Instruction-shaped text rules no longer miss phrases split by extra
   whitespace. Every static and runtime phrase rule treats any run of
   whitespace (doubled spaces, tabs, newlines, other Unicode whitespace) as one

@@ -47,7 +47,10 @@ So an allowlisted fixed host still raises a `trusted_destination_residual` when:
   `--multi-tenant-hosts`), **or**
 - the server is **credential-bearing** — a tool param whose name tokenizes to a
   credential token (`auth`, `token`, `key`, `apikey`, `secret`, `bearer`, `credential`;
-  exact-token, not substring), or a resource URI that templates its userinfo.
+  exact-token, not substring, after the same normalization SSRF applies; in a name that
+  contains an invisible codepoint the credential tokens also match as substrings, and a
+  match the name has as written is never cancelled by an identifier qualifier that only
+  folding produces), or a resource URI that templates its userinfo.
 
 Severity is **MEDIUM** when a credential can be attached (the active redirect vector) and
 **LOW** for the multi-tenant property alone. The residual is never HIGH.

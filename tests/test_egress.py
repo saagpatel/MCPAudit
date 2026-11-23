@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from mcp_audit.egress import EgressDetector, _is_credential_token_set
+from mcp_audit.egress import EgressDetector, _is_credential_param, _is_credential_token_set
 from mcp_audit.models import (
     CapabilityTarget,
     ClientType,
@@ -237,6 +237,78 @@ def test_non_credential_param_does_not_trigger_residual() -> None:
 )
 def test_credential_param_names_are_detected(param: str) -> None:
     assert _is_credential_token_set(_key_tokens(param))
+
+
+@pytest.mark.parametrize(
+    "param",
+    [
+        "auth\u200bToken",
+        "api\u2060key",
+        "ｓｅｃｒｅｔ",
+        "bear\u00ader",
+        "token\u200bvalue",
+        "user\u200bsecret",
+        "ｔｏｋｅｎ\u200bvalue",
+        "user\u200bs\u200becret",
+        "user\u200bt\u200bokenValue",  # camelCase suffix after a hidden join
+        "my\u200bk\u200beyring",  # credential word inside an obfuscated word
+    ],
+    ids=repr,
+)
+def test_invisible_or_compatibility_characters_do_not_hide_credential_params(param: str) -> None:
+    assert _is_credential_param(param)
+
+
+@pytest.mark.parametrize(
+    "param", ["pr\u200bimary_key", "s\u200bort_key", "primаry_key", "ｐｒｉｍａｒｙ\u200b_key"], ids=repr
+)
+def test_folded_qualifier_never_cancels_a_raw_credential_match(param: str) -> None:
+    # The raw tokens ('pr', 'imary', 'key') already match; folding adds 'primary', which must
+    # not cancel that match.
+    assert _is_credential_param(param)
+
+
+def test_folded_qualifier_keeps_trusted_destination_residual_medium() -> None:
+    audit = _audit(
+        tools=[_tool("call", "Call an API.", {"pr\u200bimary_key": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://docs.internal.example/data")],
+    )
+    findings = EgressDetector(allowlist={"internal.example"}).scan_server(audit)
+    assert [(f.kind, f.severity) for f in findings] == [
+        (EgressKind.TRUSTED_DESTINATION_RESIDUAL, EgressSeverity.MEDIUM)
+    ]
+
+
+@pytest.mark.parametrize("param", ["primary\u200bkey", "sort\u200b_key", "q\u200buery"], ids=repr)
+def test_obfuscated_identifier_keys_follow_clean_text_rules(param: str) -> None:
+    # Qualifiers are exact tokens, so obfuscation never adds or removes their effect.
+    assert not _is_credential_param(param)
+
+
+def test_mixed_form_credential_param_raises_trusted_destination_residual() -> None:
+    audit = _audit(
+        tools=[_tool("send", "Send to the API.", {"ｔｏｋｅｎ\u200bvalue": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://docs.internal.example/data")],
+    )
+    findings = EgressDetector(allowlist={"internal.example"}).scan_server(audit)
+    assert [(f.kind, f.severity) for f in findings] == [
+        (EgressKind.TRUSTED_DESTINATION_RESIDUAL, EgressSeverity.MEDIUM)
+    ]
+
+
+@pytest.mark.parametrize(
+    "key", ["target\u200bｕｒｌ", "target\u200bu\u200brl", "target\u200bu\u200brlValue"], ids=repr
+)
+def test_mixed_form_url_param_is_unbounded_egress(key: str) -> None:
+    audit = _audit(tools=[_tool("fetch_one", "Fetch one.", {key: {"type": "string"}})])
+    findings = EgressDetector(allowlist=set()).scan_server(audit)
+    assert [(f.kind, f.target_name) for f in findings] == [(EgressKind.UNBOUNDED_EGRESS, "fetch_one")]
+
+
+def test_zero_width_url_param_is_unbounded_egress() -> None:
+    audit = _audit(tools=[_tool("fetch_one", "Fetch one.", {"u\u200brl": {"type": "string"}})])
+    findings = EgressDetector(allowlist=set()).scan_server(audit)
+    assert [(f.kind, f.target_name) for f in findings] == [(EgressKind.UNBOUNDED_EGRESS, "fetch_one")]
 
 
 @pytest.mark.parametrize(
