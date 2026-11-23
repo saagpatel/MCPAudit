@@ -90,15 +90,8 @@ class _SchemaWalkResult:
     incomplete_reasons: list[str]
 
 
-def _word_tokens(text: str) -> list[str]:
-    """Split words and camel/acronym boundaries in one linear pass.
-
-    Text is normalized first (NFKC, invisible codepoints removed, curated
-    confusables folded), so a zero-width or fullwidth character cannot hide a
-    parameter name such as ``u\u200brl`` or a fetch verb from tokenization.
-    Callers keep the raw text for evidence.
-    """
-    text = normalize_text(text)
+def _split_words(text: str) -> list[str]:
+    """Split words and camel/acronym boundaries in one linear pass."""
     spaced: list[str] = []
     for index, char in enumerate(text):
         if index:
@@ -119,6 +112,24 @@ def _word_tokens(text: str) -> list[str]:
                 spaced.append("_")
         spaced.append(char)
     return _WORD_RE.findall("".join(spaced).lower())
+
+
+def _word_tokens(text: str) -> list[str]:
+    """Tokens of the raw text, plus any new tokens of its normalized form.
+
+    Raw tokens treat any non-alphanumeric character, invisible ones included, as
+    a word break, so ``target\u200burl`` still yields ``url``. Normalized tokens
+    (NFKC, invisible codepoints removed, curated confusables folded) join a word
+    an invisible character split, so ``u\u200brl`` also yields ``url``, and
+    fullwidth or lookalike letters fold to ASCII. Callers keep the raw text for
+    evidence.
+    """
+    raw = _split_words(text)
+    normalized = normalize_text(text)
+    if normalized == text:
+        return raw
+    seen = set(raw)
+    return raw + [token for token in _split_words(normalized) if token not in seen]
 
 
 def _tokens(text: str) -> list[str]:

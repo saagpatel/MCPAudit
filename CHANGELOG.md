@@ -50,8 +50,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - A zero-width, fullwidth or other invisible character inside a tool parameter
   name (`u\u200brl`) or a fetch verb no longer hides it from SSRF and egress.
-  Parameter names, tool names and descriptions are normalized (NFKC, invisible
-  codepoints removed, confusables folded) before tokenizing; evidence still
+  Parameter names, tool names and descriptions are tokenized both as written
+  and normalized (NFKC, invisible codepoints removed, confusables folded), so an
+  invisible character can neither split a word nor join two; evidence still
   names the raw parameter with invisibles rendered. The same tokenizer feeds
   the egress credential-parameter check and the `credential_header` schema rule.
 - Instruction-shaped text rules no longer miss phrases split by extra

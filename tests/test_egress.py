@@ -240,7 +240,16 @@ def test_credential_param_names_are_detected(param: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "param", ["auth\u200bToken", "api\u2060key", "ｓｅｃｒｅｔ", "bear\u00ader"], ids=repr
+    "param",
+    [
+        "auth\u200bToken",
+        "api\u2060key",
+        "ｓｅｃｒｅｔ",
+        "bear\u00ader",
+        "token\u200bvalue",
+        "user\u200bsecret",
+    ],
+    ids=repr,
 )
 def test_invisible_or_compatibility_characters_do_not_hide_credential_params(param: str) -> None:
     assert _is_credential_token_set(_key_tokens(param))

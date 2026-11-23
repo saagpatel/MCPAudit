@@ -34,13 +34,17 @@ server-side request root such as `fetch`, `curl`, `wget`, `download`,
 network tool descriptions and would raise nearly every URL-parameter finding to
 high.
 
-Parameter names, tool names and descriptions are normalized before they are
-split into tokens: NFKC, invisible codepoints (zero-width, word joiner, BOM,
-soft hyphen, tag characters, variation selectors) removed, and the curated
-confusable lookalikes folded. A zero-width or fullwidth character therefore
-cannot hide a parameter such as `u\u200brl` or a verb such as `f\u200betch`.
-Evidence still names the raw parameter, with invisible codepoints shown as
-`‹U+200B›`. The same characters also raise `OBFUSCATED_METADATA`.
+Parameter names, tool names and descriptions are tokenized twice: as written,
+where any non-alphanumeric character (an invisible one included) breaks a word,
+and after normalization (NFKC, invisible codepoints such as zero-width, word
+joiner, BOM, soft hyphen, tag characters and variation selectors removed, and
+the curated confusable lookalikes folded). Both token sets count, so an
+invisible character can neither hide a parameter by splitting it (`u\u200brl`,
+`f\u200betch`) nor by joining two words (`target\u200burl`), and fullwidth or
+lookalike letters fold to ASCII. Evidence still names the raw parameter, with
+invisible codepoints shown as `‹U+200B›`. Invisible codepoints and mixed-script
+confusables also raise `OBFUSCATED_METADATA`; fullwidth compatibility forms
+alone do not.
 
 At most one finding is emitted per tool, at the highest applicable severity:
 
