@@ -6,7 +6,7 @@ import socket
 
 import pytest
 
-from mcp_audit.egress import EgressDetector, _is_credential_token_set
+from mcp_audit.egress import EgressDetector, _is_credential_param, _is_credential_token_set
 from mcp_audit.models import (
     CapabilityTarget,
     ClientType,
@@ -250,11 +250,19 @@ def test_credential_param_names_are_detected(param: str) -> None:
         "user\u200bsecret",
         "ｔｏｋｅｎ\u200bvalue",
         "user\u200bs\u200becret",
+        "user\u200bt\u200bokenValue",  # camelCase suffix after a hidden join
+        "my\u200bk\u200beyring",  # credential word inside an obfuscated word
     ],
     ids=repr,
 )
 def test_invisible_or_compatibility_characters_do_not_hide_credential_params(param: str) -> None:
-    assert _is_credential_token_set(_key_tokens(param))
+    assert _is_credential_param(param)
+
+
+@pytest.mark.parametrize("param", ["primary\u200bkey", "sort\u200b_key", "q\u200buery"], ids=repr)
+def test_obfuscated_identifier_keys_follow_clean_text_rules(param: str) -> None:
+    # Qualifiers are exact tokens, so obfuscation never adds or removes their effect.
+    assert not _is_credential_param(param)
 
 
 def test_mixed_form_credential_param_raises_trusted_destination_residual() -> None:
@@ -268,7 +276,9 @@ def test_mixed_form_credential_param_raises_trusted_destination_residual() -> No
     ]
 
 
-@pytest.mark.parametrize("key", ["target\u200bｕｒｌ", "target\u200bu\u200brl"], ids=repr)
+@pytest.mark.parametrize(
+    "key", ["target\u200bｕｒｌ", "target\u200bu\u200brl", "target\u200bu\u200brlValue"], ids=repr
+)
 def test_mixed_form_url_param_is_unbounded_egress(key: str) -> None:
     audit = _audit(tools=[_tool("fetch_one", "Fetch one.", {key: {"type": "string"}})])
     findings = EgressDetector(allowlist=set()).scan_server(audit)

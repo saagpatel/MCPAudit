@@ -121,6 +121,16 @@ def _is_credential_token_set(tokens: set[str]) -> bool:
     return "key" in tokens and not (tokens & _IDENTIFIER_KEY_QUALIFIERS)
 
 
+# Words that make a param name credential-bearing, also matched as substrings when the name
+# hides them with invisible codepoints. Identifier qualifiers only suppress, so they stay
+# exact-token: obfuscation can add a credential match, never remove one.
+_CREDENTIAL_VOCABULARY = frozenset(_CREDENTIAL_PARAM_TOKENS | {"key"})
+
+
+def _is_credential_param(key: str) -> bool:
+    return _is_credential_token_set(_key_tokens(key, _CREDENTIAL_VOCABULARY))
+
+
 def _is_remote_uri(uri: str) -> bool:
     """True if ``uri`` uses a network-reaching scheme (egress only audits these).
 
@@ -241,7 +251,7 @@ class EgressDetector:
             if not isinstance(props, dict):
                 continue
             for key in props:
-                if _is_credential_token_set(_key_tokens(str(key))):
+                if _is_credential_param(str(key)):
                     return True
         return any(
             _uri_templates_userinfo(resource.uri)

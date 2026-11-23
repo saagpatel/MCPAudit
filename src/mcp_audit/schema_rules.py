@@ -546,7 +546,10 @@ def _schema_rules(
                 headers[header.casefold()] = header
             # A credential-looking parameter mapped to a request header duplicates the
             # credential's transport declaration and can make schema consumers disagree.
-            if name is not None and {word.lower() for word in _word_tokens(name)} & _CREDENTIAL_WORDS:
+            if (
+                name is not None
+                and {word.lower() for word in _word_tokens(name, _CREDENTIAL_WORDS)} & _CREDENTIAL_WORDS
+            ):
                 findings.append(
                     SchemaFinding(
                         tool_name=tool.name,

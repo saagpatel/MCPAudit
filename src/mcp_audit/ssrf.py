@@ -9,7 +9,7 @@ metadata endpoints) — not that the server is exploitable.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
@@ -114,40 +114,24 @@ def _split_words(text: str) -> list[str]:
     return _WORD_RE.findall("".join(spaced).lower())
 
 
-# Longest token any caller matches exactly or by prefix ("idempotency", "credential").
-_MAX_JOINED_TOKEN = 12
 _ALNUM_RUN_RE = re.compile(r"[A-Za-z0-9\x00]+")
 
 
-def _joined_runs(marked: str) -> Iterator[str]:
-    """Short runs of adjacent pieces that invisible characters (``\x00``) split.
-
-    Any invisible may be a word break or nothing, so ``target\u200bu\u200brl``
-    yields ``url``. Runs are capped at ``_MAX_JOINED_TOKEN`` characters, which
-    keeps the cost linear in the text however many invisibles it holds.
-    """
-    for chunk in _ALNUM_RUN_RE.findall(marked):
-        if "\x00" not in chunk:
-            continue
-        pieces = [piece.lower() for piece in chunk.split("\x00") if piece]
-        for first, joined in enumerate(pieces):
-            following = first + 1
-            while following < len(pieces) and len(joined) + len(pieces[following]) <= _MAX_JOINED_TOKEN:
-                joined += pieces[following]
-                following += 1
-                yield joined
-
-
-def _word_tokens(text: str) -> list[str]:
+def _word_tokens(text: str, vocabulary: Collection[str] = ()) -> list[str]:
     """Tokens of the raw text, then any new tokens of its normalized readings.
 
     Raw tokens treat any non-alphanumeric character, invisible ones included,
-    as a word break, so ``target\u200burl`` yields ``url``. The normalized
-    readings fold NFKC compatibility forms and curated confusables to ASCII and
-    then treat each invisible codepoint as a word break, as nothing, or (for
-    short runs) as either, so ``u\u200brl``, ``target\u200bｕｒｌ`` and
-    ``target\u200bu\u200brl`` all yield ``url``. Callers keep the raw text
-    for evidence.
+    as a word break, so ``target\u200burl`` yields ``url``. For non-ASCII text,
+    NFKC compatibility forms and curated confusables are folded to ASCII and the
+    folded text is read twice, with each invisible codepoint as a word break and
+    as nothing (``u\u200brl`` yields ``url``).
+
+    A word that contains an invisible codepoint is adversarial, so any
+    ``vocabulary`` entry found as a substring of its folded, invisible-free,
+    lowercased skeleton is also a token: ``target\u200bu\u200brlValue`` yields
+    ``url`` and ``Please\u200bf\u200betchsomething`` yields ``fetch``. Clean
+    words keep exact-token matching. Callers pass only words that raise a
+    detection and keep the raw text for evidence.
     """
     raw = _split_words(text)
     if text.isascii():  # ASCII has no invisible or compatibility codepoints
@@ -157,16 +141,24 @@ def _word_tokens(text: str) -> list[str]:
     tokens = dict.fromkeys(raw)
     for reading in (marked.replace("\x00", " "), marked.replace("\x00", "")):
         tokens.update(dict.fromkeys(_split_words(reading)))
-    tokens.update(dict.fromkeys(_joined_runs(marked)))
+    if vocabulary:
+        for chunk in _ALNUM_RUN_RE.findall(marked):
+            if "\x00" in chunk:
+                skeleton = chunk.replace("\x00", "").lower()
+                tokens.update(dict.fromkeys(word for word in vocabulary if word in skeleton))
     return list(tokens)
 
 
+# Words matched as substrings of obfuscated parameter names (see _word_tokens).
+_PARAM_VOCABULARY = frozenset(_URL_TOKENS | _HOST_TOKENS)
+
+
 def _tokens(text: str) -> list[str]:
-    return _word_tokens(text)
+    return _word_tokens(text, _FETCH_VERB_ROOTS)
 
 
-def _key_tokens(key: str) -> set[str]:
-    return set(_word_tokens(key))
+def _key_tokens(key: str, vocabulary: Collection[str] = _PARAM_VOCABULARY) -> set[str]:
+    return set(_word_tokens(key, vocabulary))
 
 
 def _is_url_param(key: str, prop: object) -> bool:

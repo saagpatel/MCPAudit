@@ -100,6 +100,9 @@ def test_invisible_character_between_words_still_separates_them(key: str, patter
         ("ｔａｒｇｅｔ\u2060u\u200bｒｌ", "url_param_with_fetch_verb"),
         ("target\u200bｈｏｓｔ", "host_param_with_fetch_verb"),
         ("upstream\u200bh\u200bost", "host_param_with_fetch_verb"),
+        ("target\u200bu\u200brlValue", "url_param_with_fetch_verb"),  # camelCase suffix
+        ("u\u200brlForRedirectTargetValue", "url_param_with_fetch_verb"),  # long camelCase tail
+        ("myW\u200bebhookHandler", "url_param_with_fetch_verb"),
     ],
     ids=repr,
 )
@@ -110,12 +113,26 @@ def test_mixed_invisible_and_compatibility_forms_do_not_hide_params(key: str, pa
 
 @mark.parametrize(
     "description",
-    ["Please\u200bfеtch it.", "Please\u200bf\u200betch it.", "Ｐｌｅａｓｅ\u200bｆｅｔｃｈ"],
+    [
+        "Please\u200bfеtch it.",
+        "Please\u200bf\u200betch it.",
+        "Ｐｌｅａｓｅ\u200bｆｅｔｃｈ",
+        "Please\u200bf\u200betchsomething now.",  # fetch root before a long suffix
+        "Auto\u200bdown\u200bloadsEverything",
+    ],
     ids=repr,
 )
 def test_mixed_invisible_and_confusable_forms_do_not_hide_fetch_verb(description: str) -> None:
     findings = SsrfDetector().scan_tool(_tool("tool", description, {"url": {"type": "string"}}))
     assert [f.pattern_name for f in findings] == ["url_param_with_fetch_verb"]
+
+
+def test_obfuscated_word_matches_vocabulary_by_substring() -> None:
+    # Accepted cost of the substring rule: an invisible inside an identifier is adversarial,
+    # so 'gho\u200bst' counts as a host parameter, while clean 'ghost' does not.
+    obfuscated = SsrfDetector().scan_tool(_tool("ping_it", "Ping it.", {"gho\u200bst": {"type": "string"}}))
+    clean = SsrfDetector().scan_tool(_tool("ping_it", "Ping it.", {"ghost": {"type": "string"}}))
+    assert [f.pattern_name for f in obfuscated] == ["host_param_with_fetch_verb"] and clean == []
 
 
 @mark.parametrize("chunk", ["x\u200b", "ab\u200b", "\u200b", "é\u200b"], ids=repr)
