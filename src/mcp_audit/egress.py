@@ -47,6 +47,7 @@ from mcp_audit.models import (
 from mcp_audit.ssrf import (
     _REMOTE_SCHEMES,
     _key_tokens,
+    _split_words,
     fixed_host_from_uri,
     host_in_allowlist,
 )
@@ -122,13 +123,22 @@ def _is_credential_token_set(tokens: set[str]) -> bool:
 
 
 # Words that make a param name credential-bearing, also matched as substrings when the name
-# hides them with invisible codepoints. Identifier qualifiers only suppress, so they stay
-# exact-token: obfuscation can add a credential match, never remove one.
+# hides them with invisible codepoints. Identifier qualifiers only suppress, so they never
+# join this vocabulary.
 _CREDENTIAL_VOCABULARY = frozenset(_CREDENTIAL_PARAM_TOKENS | {"key"})
 
 
 def _is_credential_param(key: str) -> bool:
-    return _is_credential_token_set(_key_tokens(key, _CREDENTIAL_VOCABULARY))
+    """True if the name as written, or any normalized reading of it, is credential-bearing.
+
+    Checking the raw tokens on their own first means a qualifier that only folding produces
+    (``pr\u200bimary_key``, ``primаry_key`` with a Cyrillic ``а``) cannot cancel the bare
+    ``key`` match the raw text already has: obfuscation can add a credential match, never
+    remove one.
+    """
+    return _is_credential_token_set(set(_split_words(key))) or _is_credential_token_set(
+        _key_tokens(key, _CREDENTIAL_VOCABULARY)
+    )
 
 
 def _is_remote_uri(uri: str) -> bool:

@@ -259,6 +259,26 @@ def test_invisible_or_compatibility_characters_do_not_hide_credential_params(par
     assert _is_credential_param(param)
 
 
+@pytest.mark.parametrize(
+    "param", ["pr\u200bimary_key", "s\u200bort_key", "primаry_key", "ｐｒｉｍａｒｙ\u200b_key"], ids=repr
+)
+def test_folded_qualifier_never_cancels_a_raw_credential_match(param: str) -> None:
+    # The raw tokens ('pr', 'imary', 'key') already match; folding adds 'primary', which must
+    # not cancel that match.
+    assert _is_credential_param(param)
+
+
+def test_folded_qualifier_keeps_trusted_destination_residual_medium() -> None:
+    audit = _audit(
+        tools=[_tool("call", "Call an API.", {"pr\u200bimary_key": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://docs.internal.example/data")],
+    )
+    findings = EgressDetector(allowlist={"internal.example"}).scan_server(audit)
+    assert [(f.kind, f.severity) for f in findings] == [
+        (EgressKind.TRUSTED_DESTINATION_RESIDUAL, EgressSeverity.MEDIUM)
+    ]
+
+
 @pytest.mark.parametrize("param", ["primary\u200bkey", "sort\u200b_key", "q\u200buery"], ids=repr)
 def test_obfuscated_identifier_keys_follow_clean_text_rules(param: str) -> None:
     # Qualifiers are exact tokens, so obfuscation never adds or removes their effect.
