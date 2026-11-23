@@ -281,13 +281,64 @@ class TestSsrfAllowlist:
         # urlparse drops tab, CR and LF, so these have an authority: never the implied host.
         ("github:\n//{host}/repo", None),
         ("github:\r//{host}/repo", None),
-        ("github:\t//evil.example/{repo}", None),
+        ("github:\t//evil.example/{repo}", "evil.example"),  # its authority, as scan_resource reads it
         ("github:\\\\{host}/repo", None),  # backslashes another parser may read as "//"
         ("github:owner//{repo}", None),
     ],
 )
 def test_fixed_host_resolves_github_shorthand(uri: str, host: str | None) -> None:
     assert fixed_host_from_uri(uri) == host
+
+
+@mark.parametrize(
+    "uri,host",
+    [
+        ("https://api.trusted.com/{id}", "api.trusted.com"),
+        ("https://{host}/x", None),
+        ("http://[{host}]/x", None),
+        ("github:owner/{repo}", "github.com"),
+        ("github:\n//{host}/repo", None),
+        ("https:\t//evil.example/{x}", "evil.example"),
+        ("s3:bucket/{key}", None),
+    ],
+    ids=repr,
+)
+def test_resource_finding_carries_its_destination(uri: str, host: str | None) -> None:
+    (finding,) = SsrfDetector().scan_resource(ResourceInfo(uri=uri, name="r"))
+    assert finding.destination_resolved and finding.destination_host == host
+    assert fixed_host_from_uri(uri) == host  # the classifier and the shared lookup agree
+
+
+def test_tool_finding_destination_is_caller_controlled() -> None:
+    (finding,) = SsrfDetector().scan_tool(
+        _tool("https://trusted.com/x", "Fetch.", {"url": {"type": "string"}})
+    )
+    assert finding.destination_resolved and finding.destination_host is None
+
+
+def test_destination_is_internal_only() -> None:
+    (finding,) = SsrfDetector().scan_resource(ResourceInfo(uri="https://api.trusted.com/{id}", name="r"))
+    assert not {key for key in finding.model_dump(mode="json") if "destination" in key}
+    assert not {key for key in SsrfFinding.model_json_schema()["properties"] if "destination" in key}
+    assert finding.model_copy().destination_host == "api.trusted.com"
+    # A round trip through the report drops it; the URI fallback then gives the same host.
+    reloaded = SsrfFinding.model_validate(finding.model_dump(mode="json"))
+    assert not reloaded.destination_resolved
+    assert filter_allowlisted_ssrf([reloaded], {"trusted.com"}) == ([], 1)
+
+
+def test_allowlisting_reads_the_classified_destination(monkeypatch: MonkeyPatch) -> None:
+    findings = SsrfDetector().scan_server(
+        [_tool("fetch_url", "Fetch a URL.", {"url": {"type": "string"}})],
+        [ResourceInfo(uri="https://api.trusted.com/{id}", name="r")],
+    )
+
+    def no_reparse(uri: str) -> str | None:
+        raise AssertionError(f"re-parsed {uri!r}")
+
+    monkeypatch.setattr(ssrf_module, "fixed_host_from_uri", no_reparse)
+    kept, dropped = filter_allowlisted_ssrf(findings, {"trusted.com"})
+    assert [f.target_name for f in kept] == ["fetch_url"] and dropped == 1
 
 
 @mark.parametrize(

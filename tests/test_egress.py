@@ -131,6 +131,38 @@ def test_tool_named_like_a_uri_stays_unbounded(name: str, allowlist: set[str]) -
     ]
 
 
+def test_egress_reads_ssrf_destination_without_reparsing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import mcp_audit.egress as egress_module
+    import mcp_audit.ssrf as ssrf_module
+
+    audit = _audit(
+        tools=[_tool("fetch_url", "Fetch a URL.", {"url": {"type": "string"}})],
+        resources=[ResourceInfo(uri="https://api.trusted.com/{id}")],
+    )
+
+    def no_reparse(uri: str) -> str | None:
+        if "{" in uri:  # templated targets come from SSRF findings and must not be re-parsed
+            raise AssertionError(f"re-parsed {uri!r}")
+        return None
+
+    monkeypatch.setattr(ssrf_module, "fixed_host_from_uri", no_reparse)
+    monkeypatch.setattr(egress_module, "fixed_host_from_uri", no_reparse)
+    findings = EgressDetector(allowlist=set()).scan_server(audit)
+    assert sorted((f.kind, f.destination_host) for f in findings) == sorted(
+        [(EgressKind.UNBOUNDED_EGRESS, None), (EgressKind.DESTINATION_OUTSIDE_ALLOWLIST, "api.trusted.com")]
+    )
+
+
+def test_control_character_authority_agrees_with_ssrf() -> None:
+    # SSRF reads https:\t//evil.example/{x} as a path template on evil.example; egress agrees.
+    audit = _audit(resources=[ResourceInfo(uri="https:\t//evil.example/{x}")])
+    assert [f.pattern_name for f in audit.ssrf_findings] == ["remote_uri_path_template"]
+    findings = EgressDetector(allowlist=set()).scan_server(audit)
+    assert [(f.kind, f.destination_host) for f in findings] == [
+        (EgressKind.DESTINATION_OUTSIDE_ALLOWLIST, "evil.example")
+    ]
+
+
 def test_local_scheme_resource_is_not_egress() -> None:
     audit = _audit(resources=[ResourceInfo(uri="file:///etc/passwd")])
     assert EgressDetector(allowlist=set()).scan_server(audit) == []

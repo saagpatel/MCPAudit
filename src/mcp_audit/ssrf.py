@@ -514,6 +514,7 @@ class SsrfDetector:
 
         from mcp_audit.taxonomy import ssrf_metadata
 
+        # A tool's destination is its caller's argument, never something its name implies.
         return [
             SsrfFinding(
                 target_type=CapabilityTarget.TOOL,
@@ -522,7 +523,7 @@ class SsrfDetector:
                 pattern_name=pattern,
                 evidence=evidence,
                 description=ssrf_metadata(severity).description,
-            )
+            ).resolve_destination(None)
         ]
 
     def scan_resource(self, resource: ResourceInfo) -> list[SsrfFinding]:
@@ -559,6 +560,8 @@ class SsrfDetector:
 
         from mcp_audit.taxonomy import ssrf_metadata
 
+        # Resolve the destination once, here; allowlisting and egress read it.
+        destination = None if pattern == "remote_uri_host_template" else fixed_host_from_uri(uri)
         return [
             SsrfFinding(
                 target_type=CapabilityTarget.RESOURCE,
@@ -567,7 +570,7 @@ class SsrfDetector:
                 pattern_name=pattern,
                 evidence=evidence,
                 description=ssrf_metadata(severity).description,
-            )
+            ).resolve_destination(destination)
         ]
 
     def scan_server(
@@ -605,7 +608,7 @@ _URI_STRIPPED_CONTROLS = str.maketrans("", "", "\t\r\n")
 def fixed_host_from_uri(uri: str) -> str | None:
     """Extract a fixed (non-templated) host from a URI string, or None.
 
-    Returns None for a non-URI string (no ``://`` scheme separator), a malformed
+    Returns None for a non-URI string (no scheme or no ``//`` authority), a malformed
     authority, or a caller-templated host authority (``{host}``) — a caller-steerable
     target is never allowlistable. Any userinfo is stripped before the host is read,
     and a trailing ``:port`` (or an IPv6 literal's brackets) is removed. The returned
@@ -627,12 +630,14 @@ def fixed_host_from_uri(uri: str) -> str | None:
         cleaned = uri.translate(_URI_STRIPPED_CONTROLS)
         if "//" not in cleaned and "\\" not in cleaned:
             return implied
-    if "://" not in uri:
-        return None
     try:
         parsed = urlparse(uri)
     except ValueError:
         return None
+    if not parsed.scheme:
+        return None
+    # The parsed authority, not a raw "://" search: urlparse drops tab, CR and LF, so
+    # "https:\t//host/x" has an authority here exactly as scan_resource sees it.
     netloc = parsed.netloc.rsplit("@", 1)[-1]  # drop any userinfo
     if not netloc or "{" in netloc:
         return None  # templated / caller-controlled host — not allowlistable
@@ -645,16 +650,21 @@ def fixed_host_from_uri(uri: str) -> str | None:
 
 
 def _finding_fixed_host(finding: SsrfFinding) -> str | None:
-    """Extract a fixed (non-templated) target host from an SSRF finding, or None.
+    """The fixed (non-templated) destination host of an SSRF finding, or None.
 
-    Only resource findings whose ``target_name`` is a URI with a concrete host
-    authority yield a host. Tool findings (caller-controlled URL/host params) and
-    findings whose host authority is itself templated (``{host}``) yield None — a
-    caller-steerable target is never allowlistable, so it can never be suppressed.
-    A tool's ``target_name`` is its name, which never constrains where it connects,
-    so a tool named ``github:fetch`` or ``https://trusted.example/fetch`` stays
-    caller-controlled. Shared by SSRF allowlisting and egress.
+    The detector resolves it once when it classifies the finding, and SSRF
+    allowlisting and egress both read it here, so neither parses ``target_name``
+    again. Only resource findings with a concrete host authority have a host. Tool
+    findings (caller-controlled URL/host params) and templated host authorities
+    (``{host}``) have None: a caller-steerable target is never allowlistable, so it
+    can never be suppressed. A tool's name never constrains where it connects, so a
+    tool named ``github:fetch`` or ``https://trusted.example/fetch`` stays
+    caller-controlled.
     """
+    if finding.destination_resolved:
+        return finding.destination_host
+    # A finding built outside the detector: tools stay caller-controlled, resources are
+    # resolved from their URI the same way scan_resource would.
     if finding.target_type is not CapabilityTarget.RESOURCE:
         return None
     return fixed_host_from_uri(finding.target_name)

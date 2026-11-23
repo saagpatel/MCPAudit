@@ -5,9 +5,12 @@ destination one we trust?". This is a static, schema/URI-derived signal: no netw
 request is ever made and no credential value is read.
 
 The detector consumes already-computed SSRF findings and resource URIs as its source of
-destination truth, and reuses ``ssrf.fixed_host_from_uri`` / ``ssrf.host_in_allowlist``
-so SSRF and egress never disagree about what host a target resolves to. It does not
-reimplement host parsing or allowlist matching.
+destination truth. For an SSRF finding it reads the destination host the SSRF detector
+resolved when it classified the finding (``ssrf._finding_fixed_host``) instead of parsing
+``target_name`` again; other remote resources go through the same
+``ssrf.fixed_host_from_uri``, and allowlists through ``ssrf.host_in_allowlist``, so SSRF
+and egress never disagree about what host a target resolves to. It does not reimplement
+host parsing or allowlist matching.
 
 It emits three kinds:
   * ``UNBOUNDED_EGRESS`` (HIGH) — a caller-controlled outbound target (URL/host param or
@@ -231,8 +234,13 @@ class EgressDetector:
 
         # 2. Fixed remote destinations the SSRF pass cannot see (a concrete external host
         #    with no template is not an SSRF signal, but it is still a data-egress path).
+        #    A resource step 1 already classified is not parsed again; one the SSRF
+        #    allowlist removed is no longer among the findings, so it is handled here.
+        classified = {
+            ssrf.target_name for ssrf in audit.ssrf_findings if ssrf.target_type is CapabilityTarget.RESOURCE
+        }
         for resource in audit.resources:
-            if not _is_remote_uri(resource.uri):
+            if resource.uri in classified or not _is_remote_uri(resource.uri):
                 continue
             host = fixed_host_from_uri(resource.uri)
             if host is not None:
