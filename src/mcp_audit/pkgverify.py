@@ -251,14 +251,18 @@ def _split_npm_spec(spec: str) -> tuple[str, str | None]:
 # environment marker made only of plain characters. A URL, path or VCS source, or any
 # fragment of one, cannot match, so it never becomes a package or reaches a registry.
 _REQ_VERSIONISH = r"[A-Za-z0-9.*+!_-]+"
-_REQ_SPECIFIER = rf"(?:===|==|!=|~=|>=|<=|>|<)\s*{_REQ_VERSIONISH}"
+_REQ_SPECIFIER = rf"(?:===|==|!=|~=|>=|<=|>|<) ?{_REQ_VERSIONISH}"
+# Matched against text whose whitespace runs are collapsed to single spaces, so each
+# " ?" is at most one character and the match stays linear.
 _PYPI_REQUIREMENT = re.compile(
-    rf"\s*(?P<name>{_PYPI_NAME.pattern})\s*"
-    r"(?:\[\s*[A-Za-z0-9._-]+(?:\s*,\s*[A-Za-z0-9._-]+)*\s*\])?\s*"
-    rf"(?:(?P<specs>{_REQ_SPECIFIER}(?:\s*,\s*{_REQ_SPECIFIER})*)|@(?P<at>{_REQ_VERSIONISH}))?\s*"
-    r"(?:;[A-Za-z0-9_\s.,<>=!~\"'()]*)?",
+    rf"(?P<name>{_PYPI_NAME.pattern}) ?"
+    r"(?:\[ ?[A-Za-z0-9._-]+(?: ?, ?[A-Za-z0-9._-]+)* ?\] ?)?"
+    rf"(?:(?P<specs>{_REQ_SPECIFIER}(?: ?, ?{_REQ_SPECIFIER})*) ?|@(?P<at>{_REQ_VERSIONISH}))?"
+    r"(?:;[A-Za-z0-9_ .,<>=!~\"'()]*)?",
     re.IGNORECASE,
 )
+# Real requirements are short; longer text is never a registry requirement.
+_MAX_REQUIREMENT_LENGTH = 512
 
 
 def _pypi_ref(spec: str, *, at_version: bool = False) -> PackageRef | None:
@@ -270,14 +274,16 @@ def _pypi_ref(spec: str, *, at_version: bool = False) -> PackageRef | None:
     version, and ``@latest`` pins nothing. A source URL, path or VCS requirement, or
     any string that is not one plain requirement, gives None.
     """
-    match = _PYPI_REQUIREMENT.fullmatch(spec)
+    if len(spec) > _MAX_REQUIREMENT_LENGTH:
+        return None
+    match = _PYPI_REQUIREMENT.fullmatch(" ".join(spec.split()))
     if match is None or (match.group("at") is not None and not at_version):
         return None
     version: str | None = None
     if match.group("at") is not None:
         version = None if match.group("at").lower() == "latest" else match.group("at")
     elif match.group("specs"):
-        single = re.fullmatch(r"==\s*(\S+)", match.group("specs").strip())
+        single = re.fullmatch(r"== ?(\S+)", match.group("specs").strip())
         if single is not None and _PYPI_EXACT_VERSION.fullmatch(single.group(1)):
             version = single.group(1)
     return PackageRef("pypi", match.group("name"), version)

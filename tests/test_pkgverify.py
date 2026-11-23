@@ -7,6 +7,7 @@ PackageVerifier, and the resolver is exercised on hand-built ServerConfigs.
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from typing import Any
 
@@ -462,3 +463,36 @@ def test_pypi_epoch_keeps_verifying_an_existing_baseline() -> None:
     assert [(f.kind, f.severity) for f in findings] == [
         (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH)
     ]
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "pkg" + " " * 200_000 + "/",
+        "pkg" + " \t" * 100_000 + "[" + " " * 100_000 + "/",
+        "pkg[" + "a, " * 100_000 + "/",
+        "pkg==1" + ", ==1" * 100_000 + "/",
+        "pkg" + " " * 400 + "/",  # under the length cap: collapsed whitespace keeps it linear
+        "pkg[" + "a , " * 120 + "/",
+    ],
+    ids=[
+        "spaces",
+        "spaces-and-bracket",
+        "long-extras",
+        "long-specifiers",
+        "under-cap-spaces",
+        "under-cap-extras",
+    ],
+)
+def test_malformed_requirements_are_rejected_promptly(spec: str) -> None:
+    # Launch args are untrusted and unbounded (a config may be up to 1 MiB), and checkup
+    # resolves refs offline, so the grammar must reject long malformed text in linear time.
+    started = time.perf_counter()
+    for command, args in (
+        ("uvx", [spec]),
+        ("uv", ["run", "--with", spec, "main.py"]),
+        ("pipx", ["run", spec]),
+    ):
+        assert resolve_package_refs(_cfg(command, args)) == []
+    PackageVerifier(fetch=lambda ref: None).capture(_cfg("uvx", [spec]))
+    assert time.perf_counter() - started < 2.0
