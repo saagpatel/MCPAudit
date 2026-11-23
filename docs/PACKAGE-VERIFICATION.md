@@ -34,9 +34,12 @@ so this check compares the **registry-published hash** for the exact pinned
   (the config now launches a different version than pinned) is provenance's job
   (`MCP021`), not this one — so `--verify-artifacts` never double-reports a float.
 - **Registry-shaped only.** Only a registry-shaped name with an exact version is
-  ever sent to a registry. PyPI direct references (`tool @ https://host/tool.whl`),
-  VCS and file sources, and paths resolve to no package, so a credential inside
-  such a URL never leaves the machine.
+  ever sent to a registry. A PyPI requirement yields a package only when the whole
+  string is one plain requirement: a name, optional extras, optional version
+  specifiers (or uv's `@version`), and an optional marker of plain characters.
+  Direct references (`tool @ https://host/tool.whl`), VCS and file sources, paths,
+  and any `--with` list with an item that is not such a requirement resolve to no
+  package, so no part of a URL, credential included, ever leaves the machine.
 - **Exact means immutable.** npm needs a semver version (`pkg@1.2.3`); a dist-tag
   or range (`pkg@latest`, `pkg@^1.2.0`) is never captured or verified, so the pin
   store holds no hash that check time would skip. PyPI needs `==` without a `*`

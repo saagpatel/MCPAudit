@@ -23,6 +23,7 @@ from mcp_audit.pkgverify import (
     ArtifactVerifier,
     PackageRef,
     PackageVerifier,
+    _pypi_ref,
     resolve_package_refs,
     verification_coverage,
 )
@@ -137,7 +138,8 @@ class TestResolver:
         ("pipx", ["run", "--python", "3.12", "pkg==1.0"], [("pkg", "1.0")]),
         ("pipx", ["run", "--with", "dep==2", "--cooldown", "7", "pkg==1.0"], [("pkg", "1.0"), ("dep", "2")]),
         # pipx takes one requirement per --with: no comma split, no uv @ spelling.
-        ("pipx", ["run", "--with", "a==1,b==2", "pkg==1.0"], [("pkg", "1.0"), ("a", None)]),
+        ("pipx", ["run", "--with", "a==1,b==2", "pkg==1.0"], [("pkg", "1.0")]),  # not one valid requirement
+        ("uvx", ["pkg==2!1.0"], [("pkg", "2!1.0")]),  # PEP 440 epoch
         ("uvx", ["pkg==1.0,<2"], [("pkg", None)]),  # a compound specifier pins no release
         ("pipx", ["run", "--with", "dep[x,y]==2", "pkg==1.0"], [("pkg", "1.0"), ("dep", "2")]),
         ("uvx", ["-C", "k=v", "-P", "dep", "pkg==1"], [("pkg", "1")]),  # value options from uv's help
@@ -376,6 +378,8 @@ _SECRET_SOURCES = [
     "https://example.invalid/pkg.whl?token=SECRET",
     "https://example.invalid/pkg.whl?t=a,SECRET==1.0",
     "https://example.invalid/pkg.whl?t=a,SECRET@1.0.0",
+    "https://example.invalid/dep.whl?token=x,SECRET@1.0",
+    "https://example.invalid/d.whl?x=1;SECRET==1.0",
     "https://example.invalid/pkg.tgz#SECRET==1.0",
     "git+https://SECRET@github.com/o/r.git@v1.0.0",
     "git+ssh://git@github.com/o/SECRET.git",
@@ -393,6 +397,10 @@ _SECRET_FORMS: list[tuple[str, Callable[[str], list[str]]]] = [
     ("npx", lambda src: ["-y", src]),
     ("npx", lambda src: ["--package", src, "cmd"]),
     ("npm", lambda src: ["exec", "--package", src, "--", "cmd"]),
+    # A marker on an earlier requirement must not hide a later URL.
+    ("uvx", lambda src: ["--with", f'ok; python_version > "3.8",dep @ {src}', "pkg==1.0"]),
+    ("uv", lambda src: ["run", "--with", f"ok;python_version>'3.8',dep @ {src}", "main.py"]),
+    ("pipx", lambda src: ["run", "--with", f'ok; python_version > "3.8",dep @ {src}', "pkg==1.0"]),
 ]
 
 
@@ -413,3 +421,44 @@ def test_no_part_of_a_source_url_reaches_a_registry(form: int, source: str) -> N
     PackageVerifier(fetch=fetch_hash).capture(cfg)
     ArtifactVerifier(fetch=fetch_artifact).capture(cfg)
     assert not [key for key in fetched if "SECRET" in key], fetched
+
+
+@pytest.mark.parametrize(
+    "spec,at_version,expected",
+    [
+        ("pkg==1.4.0", False, ("pkg", "1.4.0")),
+        ("pkg[cli,extra]==1.4.0", False, ("pkg", "1.4.0")),
+        ("pkg == 2!1.0rc1", False, ("pkg", "2!1.0rc1")),
+        ("pkg==v1.2.3", False, ("pkg", "v1.2.3")),
+        ("pkg>=1,<2", False, ("pkg", None)),
+        ("pkg==1.0,<2", False, ("pkg", None)),
+        ("pkg==1.0.*", False, ("pkg", None)),
+        ('pkg==1.0; python_version >= "3.10"', False, ("pkg", "1.0")),
+        ("pkg@0.6.2", True, ("pkg", "0.6.2")),
+        ("pkg@latest", True, ("pkg", None)),
+        ("pkg@0.6.2", False, None),  # @version is uv-only
+        ("pkg @ https://example.invalid/pkg.whl", True, None),
+        ("pkg@https://example.invalid/pkg.whl", True, None),
+        ("git+https://github.com/o/r.git", False, None),
+        ("./local/pkg", False, None),
+        ("pkg==1.0; extra == 'https://x'", False, None),
+        ("", False, None),
+    ],
+)
+def test_pypi_requirement_grammar(
+    spec: str, at_version: bool, expected: tuple[str, str | None] | None
+) -> None:
+    ref = _pypi_ref(spec, at_version=at_version)
+    assert (None if ref is None else (ref.name, ref.version)) == expected
+
+
+def test_pypi_epoch_keeps_verifying_an_existing_baseline() -> None:
+    cfg = _cfg("uvx", ["pkg==2!1.0"])
+    table = {"pypi:pkg:2!1.0": "hash-a"}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    assert verifier.capture(cfg) == {"pypi:pkg:2!1.0": "hash-a"}
+    table["pypi:pkg:2!1.0"] = "hash-b"
+    findings = verifier.analyze_server("srv", cfg, {"pypi:pkg:2!1.0": "hash-a"})
+    assert [(f.kind, f.severity) for f in findings] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH)
+    ]

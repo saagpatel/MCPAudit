@@ -246,30 +246,41 @@ def _split_npm_spec(spec: str) -> tuple[str, str | None]:
     return spec, None
 
 
-def _split_pypi_spec(spec: str, *, at_version: bool = False) -> tuple[str, str | None]:
-    """Split a PyPI requirement into (name, version). Only '==' yields an exact version.
+# One registry requirement, matched whole (an allowlist, not a blocklist): a name,
+# optional extras, then optional version specifiers or uv's "@version", then an optional
+# environment marker made only of plain characters. A URL, path or VCS source, or any
+# fragment of one, cannot match, so it never becomes a package or reaches a registry.
+_REQ_VERSIONISH = r"[A-Za-z0-9.*+!_-]+"
+_REQ_SPECIFIER = rf"(?:===|==|!=|~=|>=|<=|>|<)\s*{_REQ_VERSIONISH}"
+_PYPI_REQUIREMENT = re.compile(
+    rf"\s*(?P<name>{_PYPI_NAME.pattern})\s*"
+    r"(?:\[\s*[A-Za-z0-9._-]+(?:\s*,\s*[A-Za-z0-9._-]+)*\s*\])?\s*"
+    rf"(?:(?P<specs>{_REQ_SPECIFIER}(?:\s*,\s*{_REQ_SPECIFIER})*)|@(?P<at>{_REQ_VERSIONISH}))?\s*"
+    r"(?:;[A-Za-z0-9_\s.,<>=!~\"'()]*)?",
+    re.IGNORECASE,
+)
 
-    Extras (``pkg[cli]``) and environment markers (``; python_version < '3.13'``) are
-    dropped from the name. With ``at_version`` (uv's ``pkg@1.2.3`` spelling), the part
-    after ``@`` is the version; ``@latest`` names no fixed version.
+
+def _pypi_ref(spec: str, *, at_version: bool = False) -> PackageRef | None:
+    """A PyPI ref for one registry requirement, or None for anything else.
+
+    Only a single ``==`` specifier holding a PEP 440 version pins a release
+    (``pkg==2!1.0`` included); other specifiers (``>=1``, ``==1,<2``) give an unpinned
+    ref. With ``at_version`` (uv's ``pkg@1.2.3`` spelling) the part after ``@`` is the
+    version, and ``@latest`` pins nothing. A source URL, path or VCS requirement, or
+    any string that is not one plain requirement, gives None.
     """
-    spec = spec.split(";", 1)[0].strip()
-    if at_version and "@" in spec and "==" not in spec:
-        name, version = spec.split("@", 1)
-        name, version = name.strip(), version.strip()
-        return name.split("[", 1)[0].strip(), (None if version in {"", "latest"} else version)
-    if "==" in spec:
-        name, version = spec.split("==", 1)
-        version = version.strip()
-        # A compound specifier (==1,<2) pins no single release.
-        exact = version if version and not any(char in version for char in ",<>!~= ") else None
-        return name.split("[", 1)[0].strip(), exact
-    # Non-pinned constraints (>=, ~=, bare) have no exact version to verify.
-    for sep in ("<", ">", "~", "!", "="):
-        if sep in spec:
-            spec = spec.split(sep, 1)[0]
-            break
-    return spec.split("[", 1)[0].strip(), None
+    match = _PYPI_REQUIREMENT.fullmatch(spec)
+    if match is None or (match.group("at") is not None and not at_version):
+        return None
+    version: str | None = None
+    if match.group("at") is not None:
+        version = None if match.group("at").lower() == "latest" else match.group("at")
+    elif match.group("specs"):
+        single = re.fullmatch(r"==\s*(\S+)", match.group("specs").strip())
+        if single is not None and _PYPI_EXACT_VERSION.fullmatch(single.group(1)):
+            version = single.group(1)
+    return PackageRef("pypi", match.group("name"), version)
 
 
 @dataclass
@@ -340,40 +351,19 @@ def _split_requirements(value: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
-def _is_direct_reference(spec: str) -> bool:
-    """True for a requirement that names a source instead of a registry release.
-
-    PEP 508 direct references (``tool @ https://host/tool.whl``), VCS and file
-    sources, and paths are not registry packages.
-    """
-    requirement = spec.split(";", 1)[0].strip()
-    return any(char in requirement for char in "/\\:") or re.search(r"\s@|@\s", requirement) is not None
-
-
-def _pypi_ref(spec: str, *, at_version: bool = False) -> PackageRef | None:
-    """A PyPI ref for a registry requirement, or None for a direct reference."""
-    if _is_direct_reference(spec):
-        return None
-    name, version = _split_pypi_spec(spec, at_version=at_version)
-    return PackageRef("pypi", name, version) if name else None
-
-
 def _with_refs(parsed: _ParsedArgs, *, uv: bool = True) -> list[PackageRef]:
     """Registry packages installed alongside the command (``--with``, uv's ``-w``).
 
     uv takes a comma-separated list (``--with a==1,b``) and its ``pkg@1.0`` spelling;
-    pipx takes one requirement per ``--with``. A value that holds a direct reference
-    anywhere is dropped whole, before any splitting, so no piece of a URL (such as a
-    query string) can ever be read as a package and sent to a registry.
+    pipx takes one requirement per ``--with``. Unless every item of a value is one
+    plain registry requirement, the whole value is dropped, so no piece of a URL (such
+    as a query string after a comma) can ever be read as a package.
     """
     refs: list[PackageRef] = []
     for value in [*parsed.values.get("--with", []), *parsed.values.get("-w", [])]:
-        if _is_direct_reference(value):
-            continue
-        for requirement in _split_requirements(value) if uv else [value]:
-            ref = _pypi_ref(requirement, at_version=uv)
-            if ref is not None:
-                refs.append(ref)
+        items = [_pypi_ref(item, at_version=uv) for item in (_split_requirements(value) if uv else [value])]
+        if items and all(item is not None for item in items):
+            refs.extend(item for item in items if item is not None)
     return refs
 
 
