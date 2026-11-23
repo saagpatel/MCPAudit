@@ -53,8 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   launch count). `uv run --with pkg==1.0 server.py` resolves `pkg` as a
   `--with` requirement and `uv run server.py` resolves nothing (it no longer
   invents a PyPI package named `server.py`); `uvx`/`uv tool run`/`pipx run`
-  add their `--with`/`-w` requirements (a comma list, with commas inside extras
-  such as `pkg[a,b]==1.0` kept); `npm --package pkg@1.2.3 exec cmd` keeps the
+  add their `--with`/`-w` requirements (uv takes a comma list, keeping commas
+  inside extras such as `pkg[a,b]==1.0`; pipx takes one requirement per
+  `--with`; a value holding a URL is never split); `npm --package pkg@1.2.3 exec cmd` keeps the
   package given before `exec`, `npm exec` reads `--package` anywhere before
   `--` and treats `-p` as `--parseable`, and every repeated `--package` is
   resolved; PyPI direct references (`tool @ https://host/tool.whl`, VCS,

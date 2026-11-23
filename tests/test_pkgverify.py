@@ -7,6 +7,7 @@ PackageVerifier, and the resolver is exercised on hand-built ServerConfigs.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -135,6 +136,10 @@ class TestResolver:
         ("pipx", ["run", "--spec", "pkg==1.0", "cmd"], [("pkg", "1.0")]),
         ("pipx", ["run", "--python", "3.12", "pkg==1.0"], [("pkg", "1.0")]),
         ("pipx", ["run", "--with", "dep==2", "--cooldown", "7", "pkg==1.0"], [("pkg", "1.0"), ("dep", "2")]),
+        # pipx takes one requirement per --with: no comma split, no uv @ spelling.
+        ("pipx", ["run", "--with", "a==1,b==2", "pkg==1.0"], [("pkg", "1.0"), ("a", None)]),
+        ("uvx", ["pkg==1.0,<2"], [("pkg", None)]),  # a compound specifier pins no release
+        ("pipx", ["run", "--with", "dep[x,y]==2", "pkg==1.0"], [("pkg", "1.0"), ("dep", "2")]),
         ("uvx", ["-C", "k=v", "-P", "dep", "pkg==1"], [("pkg", "1")]),  # value options from uv's help
         ("npm", ["exec", "--loglevel", "warn", "--", "pkg@1.0.0"], [("pkg", "1.0.0")]),
         ("pipx", ["install", "pkg"], []),
@@ -262,8 +267,24 @@ def test_every_launched_package_is_captured_verified_and_covered(
         ("uv", ["run", "--with", "dep @ git+https://user:secret@github.com/o/r.git", "main.py"]),
         ("pipx", ["run", "--spec", "git+https://user:secret@github.com/o/r.git", "cmd"]),
         ("npx", ["-y", "git+https://user:secret@github.com/o/r.git"]),
+        # A comma inside a URL must never split it into a fake requirement.
+        (
+            "pipx",
+            ["run", "--with", "dep @ https://example.invalid/dep.whl?token=prefix,private_token==1.0", "cmd"],
+        ),
+        ("uvx", ["--with", "dep @ https://example.invalid/dep.whl?token=prefix,private_token==1.0", "cmd"]),
+        ("uv", ["run", "--with", "ok==1,dep @ https://example.invalid/d.whl?t=a,secret==2", "main.py"]),
     ],
-    ids=["uvx --from direct url", "uvx name@url", "uv run --with vcs", "pipx --spec vcs", "npx git url"],
+    ids=[
+        "uvx --from direct url",
+        "uvx name@url",
+        "uv run --with vcs",
+        "pipx --spec vcs",
+        "npx git url",
+        "pipx --with url with comma",
+        "uvx --with url with comma",
+        "uv run --with list holding a url",
+    ],
 )
 def test_source_specs_are_never_sent_to_a_registry(command: str, args: list[str]) -> None:
     fetched: list[str] = []
@@ -348,3 +369,47 @@ class TestVerifier:
         assert data["rule_id"] == "MCP025"
         assert data["ecosystem"] == "npm"
         assert data["description"] == finding.summary
+
+
+_SECRET_SOURCES = [
+    "https://user:SECRET@example.invalid/pkg.whl",
+    "https://example.invalid/pkg.whl?token=SECRET",
+    "https://example.invalid/pkg.whl?t=a,SECRET==1.0",
+    "https://example.invalid/pkg.whl?t=a,SECRET@1.0.0",
+    "https://example.invalid/pkg.tgz#SECRET==1.0",
+    "git+https://SECRET@github.com/o/r.git@v1.0.0",
+    "git+ssh://git@github.com/o/SECRET.git",
+    "file:///tmp/SECRET==1.0",
+]
+_SECRET_FORMS: list[tuple[str, Callable[[str], list[str]]]] = [
+    ("uvx", lambda src: ["--from", f"pkg @ {src}", "cmd"]),
+    ("uvx", lambda src: [f"pkg@{src}"]),
+    ("uvx", lambda src: ["--with", f"dep @ {src}", "pkg==1.0"]),
+    ("uvx", lambda src: ["-w", f"ok==1,dep @ {src}", "pkg==1.0"]),
+    ("uv", lambda src: ["run", "--with", f"dep @ {src}", "main.py"]),
+    ("uv", lambda src: ["tool", "run", "--from", src, "cmd"]),
+    ("pipx", lambda src: ["run", "--spec", src, "cmd"]),
+    ("pipx", lambda src: ["run", "--with", f"dep @ {src}", "pkg==1.0"]),
+    ("npx", lambda src: ["-y", src]),
+    ("npx", lambda src: ["--package", src, "cmd"]),
+    ("npm", lambda src: ["exec", "--package", src, "--", "cmd"]),
+]
+
+
+@pytest.mark.parametrize("source", _SECRET_SOURCES)
+@pytest.mark.parametrize("form", range(len(_SECRET_FORMS)))
+def test_no_part_of_a_source_url_reaches_a_registry(form: int, source: str) -> None:
+    command, build = _SECRET_FORMS[form]
+    fetched: list[str] = []
+
+    def fetch_hash(ref: PackageRef) -> str | None:
+        fetched.append(ref.key())
+        return "h"
+
+    def fetch_artifact(ref: PackageRef) -> None:
+        fetched.append(ref.key())
+
+    cfg = _cfg(command, build(source))
+    PackageVerifier(fetch=fetch_hash).capture(cfg)
+    ArtifactVerifier(fetch=fetch_artifact).capture(cfg)
+    assert not [key for key in fetched if "SECRET" in key], fetched

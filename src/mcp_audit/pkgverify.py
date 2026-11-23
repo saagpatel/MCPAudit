@@ -260,7 +260,10 @@ def _split_pypi_spec(spec: str, *, at_version: bool = False) -> tuple[str, str |
         return name.split("[", 1)[0].strip(), (None if version in {"", "latest"} else version)
     if "==" in spec:
         name, version = spec.split("==", 1)
-        return name.split("[", 1)[0].strip(), version.strip() or None
+        version = version.strip()
+        # A compound specifier (==1,<2) pins no single release.
+        exact = version if version and not any(char in version for char in ",<>!~= ") else None
+        return name.split("[", 1)[0].strip(), exact
     # Non-pinned constraints (>=, ~=, bare) have no exact version to verify.
     for sep in ("<", ">", "~", "!", "="):
         if sep in spec:
@@ -355,12 +358,20 @@ def _pypi_ref(spec: str, *, at_version: bool = False) -> PackageRef | None:
     return PackageRef("pypi", name, version) if name else None
 
 
-def _with_refs(parsed: _ParsedArgs) -> list[PackageRef]:
-    """Registry packages uv installs alongside the command (``--with a==1,b`` or ``-w``)."""
+def _with_refs(parsed: _ParsedArgs, *, uv: bool = True) -> list[PackageRef]:
+    """Registry packages installed alongside the command (``--with``, uv's ``-w``).
+
+    uv takes a comma-separated list (``--with a==1,b``) and its ``pkg@1.0`` spelling;
+    pipx takes one requirement per ``--with``. A value that holds a direct reference
+    anywhere is dropped whole, before any splitting, so no piece of a URL (such as a
+    query string) can ever be read as a package and sent to a registry.
+    """
     refs: list[PackageRef] = []
     for value in [*parsed.values.get("--with", []), *parsed.values.get("-w", [])]:
-        for requirement in _split_requirements(value):
-            ref = _pypi_ref(requirement, at_version=True)
+        if _is_direct_reference(value):
+            continue
+        for requirement in _split_requirements(value) if uv else [value]:
+            ref = _pypi_ref(requirement, at_version=uv)
             if ref is not None:
                 refs.append(ref)
     return refs
@@ -468,7 +479,7 @@ def _resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
         run = _parse_runner_args(parsed.rest, _PIPX_VALUE_FLAGS)
         spec = run.values.get("--spec", [None])[0] or run.positional
         ref = _pypi_ref(spec) if spec else None
-        return ([ref] if ref else []) + _with_refs(run)
+        return ([ref] if ref else []) + _with_refs(run, uv=False)
     return []
 
 
