@@ -160,6 +160,12 @@ def test_runner_grammar_resolves_only_registry_packages(
         (PackageRef("pypi", "pkg", "1.0.*"), False),
         (PackageRef("pypi", "pkg", None), False),
         (PackageRef("pypi", "pkg", "2!1.0rc1.post2.dev3+abc.1"), True),
+        (PackageRef("pypi", "pkg", "v1.2.3"), True),  # PEP 440 allows a leading v
+        (PackageRef("npm", "@scope/_pkg", "1.2.3"), True),  # legal for existing packages
+        (PackageRef("npm", "@_scope/pkg", "1.2.3"), True),
+        (PackageRef("npm", "_pkg", "1.2.3"), True),
+        (PackageRef("npm", "@scope/.pkg", "1.2.3"), False),
+        (PackageRef("npm", "@../x", "1.2.3"), False),
         # Never registry-shaped, so never fetched.
         (PackageRef("pypi", "tool ", "https://user:secret@example.invalid/tool.whl"), False),
         (PackageRef("pypi", "pkg", "1.0/../../x"), False),
@@ -182,6 +188,28 @@ def test_moving_npm_versions_are_not_captured(spec: str) -> None:
 
     assert PackageVerifier(fetch=fake_fetch).capture(_cfg("npx", ["-y", spec])) == {}
     assert fetched == []
+
+
+@pytest.mark.parametrize(
+    "command,args,key",
+    [
+        ("npx", ["-y", "@scope/_pkg@1.2.3"], "npm:@scope/_pkg:1.2.3"),
+        ("npx", ["-y", "@_scope/pkg@1.2.3"], "npm:@_scope/pkg:1.2.3"),
+        ("uvx", ["pkg==v1.2.3"], "pypi:pkg:v1.2.3"),
+    ],
+    ids=["npm @scope/_pkg", "npm @_scope/pkg", "pypi ==v1.2.3"],
+)
+def test_valid_registry_spellings_keep_their_baseline_key(command: str, args: list[str], key: str) -> None:
+    # The key is the one main captured, so existing baselines keep verifying.
+    cfg = _cfg(command, args)
+    table = {key: "hash-a"}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    assert verifier.capture(cfg) == {key: "hash-a"}
+    table[key] = "hash-b"
+    findings = verifier.analyze_server("srv", cfg, {key: "hash-a"})
+    assert [(f.kind, f.severity) for f in findings] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH)
+    ]
 
 
 def test_uvx_at_version_is_captured_and_verified() -> None:

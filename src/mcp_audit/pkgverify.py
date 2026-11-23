@@ -180,12 +180,18 @@ _PIPX_VALUE_FLAGS = {
 _NPM_EXACT_VERSION = re.compile(r"v?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?")
 # Registry-shaped names and versions. Anything else (a URL, a VCS or file source, a
 # path) is never sent to a registry, so a credential inside it can never leave.
-_NPM_NAME = re.compile(r"(?:@[a-z0-9~][a-z0-9._~-]*/)?[a-z0-9~][a-z0-9._~-]*", re.IGNORECASE)
+# npm names and scopes: URL-safe characters with one scope slash; a leading "_" is legal
+# for existing packages (@scope/_pkg), a leading "." never is.
+_NPM_NAME = re.compile(r"(?:@[a-z0-9~_-][a-z0-9._~-]*/)?[a-z0-9~_-][a-z0-9._~-]*", re.IGNORECASE)
 _PYPI_NAME = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?", re.IGNORECASE)
-# PEP 440 public versions plus an optional local label, e.g. 1.4.0, 2!1.0rc1, 1.0.post2.dev3+abc.1.
+# PEP 440's VERSION_PATTERN (its leading "v", epoch, pre, post, dev and local label),
+# e.g. 1.4.0, v1.2.3, 2!1.0rc1, 1.0.post2.dev3+abc.1.
 _PYPI_EXACT_VERSION = re.compile(
-    r"(?:\d+!)?\d+(?:\.\d+)*(?:[._-]?(?:a|b|c|rc|alpha|beta|pre|preview)[._-]?\d*)?"
-    r"(?:-\d+|[._-]?(?:post|rev|r)[._-]?\d*)?(?:[._-]?dev[._-]?\d*)?(?:\+[a-z0-9]+(?:[._-][a-z0-9]+)*)?",
+    r"v?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*"
+    r"(?:[-_.]?(?:a|b|c|rc|alpha|beta|pre|preview)[-_.]?[0-9]*)?"
+    r"(?:-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?"
+    r"(?:[-_.]?dev[-_.]?[0-9]*)?"
+    r"(?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?",
     re.IGNORECASE,
 )
 
@@ -206,7 +212,7 @@ class PackageRef:
         """True when ``version`` names one immutable release a registry can be asked for.
 
         npm: a semver version (not a dist-tag such as ``latest`` or a range such as
-        ``^1.2.0``). PyPI: a PEP 440 version (no ``*`` wildcard). The name must be
+        ``^1.2.0``). PyPI: a PEP 440 version (no ``*``; a leading ``v`` is fine). The name must be
         registry-shaped too. Only exact refs are captured at pin time and verified at
         check time, so nothing else is ever sent to a registry.
         """
