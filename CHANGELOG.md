@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- SSRF findings now carry the destination host the detector resolved when it
+  classified them (internal only: reports, SARIF and the JSON schema are
+  unchanged), and SSRF allowlisting and egress read it instead of parsing the
+  target again. The shared host lookup now reads the parsed authority rather
+  than searching the raw text for `://`, so a URI with a tab, CR or LF before
+  its `//` (`https:\t//evil.example/{x}`), which SSRF already classified as a
+  path template on that host, is reported by egress as a fixed destination
+  (MCP040) instead of HIGH unbounded egress (MCP041).
 - SSRF and egress now agree on the `github:owner/repo` shorthand. SSRF already
   called `github:owner/{repo}` a low path template on github.com, but egress
   found no host and reported HIGH unbounded egress (MCP041). The shared host
