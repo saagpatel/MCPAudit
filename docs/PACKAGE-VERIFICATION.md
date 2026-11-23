@@ -33,8 +33,20 @@ so this check compares the **registry-published hash** for the exact pinned
 - **Exact version only.** The check keys by `package@version`. A version *float*
   (the config now launches a different version than pinned) is provenance's job
   (`MCP021`), not this one — so `--verify-artifacts` never double-reports a float.
-- **Ecosystems:** npm (`npx`/`npm`) and PyPI (`uvx`/`pipx`/`uv`). Unrecognised
-  runners and unparseable specs yield nothing (no invented references).
+- **Exact means immutable.** npm needs a semver version (`pkg@1.2.3`); a dist-tag
+  or range (`pkg@latest`, `pkg@^1.2.0`) is never captured or verified, so the pin
+  store holds no hash that check time would skip. PyPI needs `==` without a `*`
+  wildcard (`pkg==1.4.0`), or uv's `pkg@1.4.0` spelling (`pkg@latest` is not exact).
+- **Ecosystems and runners.** Each runner's own option grammar decides which
+  registry packages a launch installs, so option values are never mistaken for
+  the package. Unrecognised runners and unparseable specs yield nothing (no
+  invented references): `uv run server.py` resolves no package.
+  - npm: `npx pkg@1.2.3`, `npm exec`/`npm x` (`--package`/`-p` or the first
+    positional). Other `npm` subcommands (`npm run build`) launch no registry
+    package.
+  - PyPI: `uvx` and `uv tool run` (`--from` or the command, plus each `--with`
+    requirement), `uv run` (only its `--with` requirements: the command or script
+    it runs is local), and `pipx run` (`--spec` or the first positional).
 - **Implies a pin comparison.** Requires a baseline captured with
   `pin --verify-artifacts`; servers pinned without it are skipped with a warning.
 

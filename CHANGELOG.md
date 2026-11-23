@@ -48,6 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Package references follow each runner's option grammar
+  (`--verify-artifacts`, MCP025/MCP026, and the checkup's auto-updating
+  launch count). `uv run --with pkg==1.0 server.py` resolves `pkg` as a
+  `--with` requirement and `uv run server.py` resolves nothing (it no longer
+  invents a PyPI package named `server.py`); `uvx`/`uv tool run` add their
+  `--with` requirements; `uvx pkg@0.6.2` is the exact version `0.6.2` and is
+  now verified; option values such as `uvx -p 3.12` or `pipx run --python
+  3.12` are no longer taken for the package; and `npm run`/`npm start` launch
+  no registry package. Moving versions (`npx pkg@latest`, `pkg@^1.2.0`) are no
+  longer captured at pin time, since check time never verified them.
 - SSRF findings now carry the destination host the detector resolved when it
   classified them (internal only: reports, SARIF and the JSON schema are
   unchanged), and SSRF allowlisting and egress read it instead of parsing the
