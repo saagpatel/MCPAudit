@@ -18,7 +18,13 @@ from mcp_audit.models import (
     ServerConfig,
     TransportType,
 )
-from mcp_audit.pkgverify import PackageRef, PackageVerifier, resolve_package_refs
+from mcp_audit.pkgverify import (
+    ArtifactVerifier,
+    PackageRef,
+    PackageVerifier,
+    resolve_package_refs,
+    verification_coverage,
+)
 
 
 def _cfg(command: str | None, args: list[str]) -> ServerConfig:
@@ -95,7 +101,34 @@ class TestResolver:
         ("npm", ["x", "-y", "--package", "pkg@1.0.0", "--", "cmd"], [("pkg", "1.0.0")]),
         ("npm", ["--package", "pkg@1.2.3", "exec", "cmd"], [("pkg", "1.2.3")]),  # options before exec
         ("npm", ["--package=pkg@1.2.3", "exec", "cmd"], [("pkg", "1.2.3")]),
-        ("npm", ["-p", "pkg@1.2.3", "x", "--", "cmd"], [("pkg", "1.2.3")]),
+        # npm reads options anywhere until "--"; npx stops at the first positional.
+        ("npm", ["exec", "tool-cli", "--package=tool@1.0.0"], [("tool", "1.0.0")]),
+        ("npx", ["tool-cli", "--package=tool@1.0.0"], [("tool-cli", None)]),
+        ("npm", ["exec", "--", "pkg@1.0.0", "--package=x@9.9.9"], [("pkg", "1.0.0")]),
+        # Every --package is installed.
+        (
+            "npx",
+            ["--package=tool-a@1.0.0", "--package=tool-b@2.0.0", "cmd"],
+            [("tool-a", "1.0.0"), ("tool-b", "2.0.0")],
+        ),
+        (
+            "npm",
+            ["exec", "--package", "a@1.0.0", "--package=b@2.0.0", "--", "cmd"],
+            [("a", "1.0.0"), ("b", "2.0.0")],
+        ),
+        # In npm, -p is the boolean --parseable, not a package.
+        ("npm", ["exec", "-p", "--", "tool@1.0.0"], [("tool", "1.0.0")]),
+        ("npm", ["-p", "exec", "tool@1.0.0"], [("tool", "1.0.0")]),
+        # PyPI direct references are sources, not registry packages.
+        ("uvx", ["--from", "tool @ https://user:secret@example.invalid/tool.whl", "tool"], []),
+        ("uvx", ["tool@https://user:secret@example.invalid/tool.whl"], []),
+        (
+            "uv",
+            ["run", "--with", "dep @ git+https://tok@github.com/o/r.git", "--with", "ok==1", "main.py"],
+            [("ok", "1")],
+        ),
+        ("pipx", ["run", "--spec", "git+https://tok@github.com/o/r.git", "cmd"], []),
+        ("uvx", ["./local/pkg"], []),
         ("npm", ["run", "build"], []),
         ("npm", ["start"], []),
         # pipx run: --spec or the first positional; other subcommands launch nothing.
@@ -126,6 +159,11 @@ def test_runner_grammar_resolves_only_registry_packages(
         (PackageRef("pypi", "pkg", "0.6.2"), True),
         (PackageRef("pypi", "pkg", "1.0.*"), False),
         (PackageRef("pypi", "pkg", None), False),
+        (PackageRef("pypi", "pkg", "2!1.0rc1.post2.dev3+abc.1"), True),
+        # Never registry-shaped, so never fetched.
+        (PackageRef("pypi", "tool ", "https://user:secret@example.invalid/tool.whl"), False),
+        (PackageRef("pypi", "pkg", "1.0/../../x"), False),
+        (PackageRef("npm", "git+https://user:tok", "1.0.0"), False),
     ],
 )
 def test_is_exact(ref: PackageRef, exact: bool) -> None:
@@ -160,15 +198,59 @@ def test_uvx_at_version_is_captured_and_verified() -> None:
 
 
 @pytest.mark.parametrize(
-    "command,args",
-    [("uvx", ["-w", "dep==2", "pkg==1"]), ("npm", ["--package", "pkg@1.2.3", "exec", "cmd"])],
-    ids=["uvx -w", "npm --package before exec"],
+    "command,args,count",
+    [
+        ("uvx", ["-w", "dep==2", "pkg==1"], 2),
+        ("npm", ["--package", "pkg@1.2.3", "exec", "cmd"], 1),
+        ("npx", ["--package=tool-a@1.0.0", "--package=tool-b@2.0.0", "cmd"], 2),
+        ("npm", ["exec", "tool-cli", "--package=tool@1.0.0"], 1),
+    ],
+    ids=["uvx -w", "npm --package before exec", "npx repeated --package", "npm --package after command"],
 )
-def test_every_launched_package_is_captured(command: str, args: list[str]) -> None:
+def test_every_launched_package_is_captured_verified_and_covered(
+    command: str, args: list[str], count: int
+) -> None:
     cfg = _cfg(command, args)
-    baseline = PackageVerifier(fetch=lambda ref: f"hash-{ref.name}").capture(cfg)
-    assert baseline == {ref.key(): f"hash-{ref.name}" for ref in resolve_package_refs(cfg)}
-    assert len(baseline) == (2 if command == "uvx" else 1)
+    table = {ref.key(): f"hash-{ref.name}" for ref in resolve_package_refs(cfg)}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    baseline = verifier.capture(cfg)
+    assert len(baseline) == count and baseline == table
+    verified: set[str] = set()
+    assert verifier.analyze_server("srv", cfg, baseline, verified) == []
+    assert verification_coverage(cfg, baseline, verified).state == "complete"
+    last = sorted(table)[-1]
+    table[last] = "changed"
+    drift = verifier.analyze_server("srv", cfg, baseline)
+    assert [(f.kind, f.severity) for f in drift] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH)
+    ]
+
+
+@pytest.mark.parametrize(
+    "command,args",
+    [
+        ("uvx", ["--from", "tool @ https://user:secret@example.invalid/tool.whl", "tool"]),
+        ("uvx", ["tool@https://user:secret@example.invalid/tool.whl"]),
+        ("uv", ["run", "--with", "dep @ git+https://user:secret@github.com/o/r.git", "main.py"]),
+        ("pipx", ["run", "--spec", "git+https://user:secret@github.com/o/r.git", "cmd"]),
+        ("npx", ["-y", "git+https://user:secret@github.com/o/r.git"]),
+    ],
+    ids=["uvx --from direct url", "uvx name@url", "uv run --with vcs", "pipx --spec vcs", "npx git url"],
+)
+def test_source_specs_are_never_sent_to_a_registry(command: str, args: list[str]) -> None:
+    fetched: list[str] = []
+
+    def fetch_hash(ref: PackageRef) -> str | None:
+        fetched.append(ref.key())
+        return "h"
+
+    def fetch_artifact(ref: PackageRef) -> None:
+        fetched.append(ref.key())
+
+    cfg = _cfg(command, args)
+    PackageVerifier(fetch=fetch_hash).capture(cfg)
+    ArtifactVerifier(fetch=fetch_artifact).capture(cfg)
+    assert fetched == []
 
 
 def test_uv_run_with_requirement_is_verified_not_the_script() -> None:

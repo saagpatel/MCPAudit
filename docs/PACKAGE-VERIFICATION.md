@@ -33,6 +33,10 @@ so this check compares the **registry-published hash** for the exact pinned
 - **Exact version only.** The check keys by `package@version`. A version *float*
   (the config now launches a different version than pinned) is provenance's job
   (`MCP021`), not this one — so `--verify-artifacts` never double-reports a float.
+- **Registry-shaped only.** Only a registry-shaped name with an exact version is
+  ever sent to a registry. PyPI direct references (`tool @ https://host/tool.whl`),
+  VCS and file sources, and paths resolve to no package, so a credential inside
+  such a URL never leaves the machine.
 - **Exact means immutable.** npm needs a semver version (`pkg@1.2.3`); a dist-tag
   or range (`pkg@latest`, `pkg@^1.2.0`) is never captured or verified, so the pin
   store holds no hash that check time would skip. PyPI needs `==` without a `*`
@@ -41,8 +45,10 @@ so this check compares the **registry-published hash** for the exact pinned
   registry packages a launch installs, so option values are never mistaken for
   the package. Unrecognised runners and unparseable specs yield nothing (no
   invented references): `uv run server.py` resolves no package.
-  - npm: `npx pkg@1.2.3`, `npm exec`/`npm x` (`--package`/`-p` or the first
-    positional). Other `npm` subcommands (`npm run build`) launch no registry
+  - npm: `npx` (every `--package`/`-p`, or else the first positional; options
+    end at that positional) and `npm exec`/`npm x` (every `--package`, or else
+    the command; npm reads options anywhere until `--`, and its `-p` is
+    `--parseable`). Other `npm` subcommands (`npm run build`) launch no registry
     package.
   - PyPI: `uvx` and `uv tool run` (`--from` or the command, plus each `--with`
     requirement), `uv run` (only its `--with` requirements: the command or script

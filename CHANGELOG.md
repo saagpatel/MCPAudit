@@ -55,7 +55,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   invents a PyPI package named `server.py`); `uvx`/`uv tool run`/`pipx run`
   add their `--with`/`-w` requirements (a comma list, with commas inside extras
   such as `pkg[a,b]==1.0` kept); `npm --package pkg@1.2.3 exec cmd` keeps the
-  package given before `exec`; `uvx pkg@0.6.2` is the exact version `0.6.2` and is
+  package given before `exec`, `npm exec` reads `--package` anywhere before
+  `--` and treats `-p` as `--parseable`, and every repeated `--package` is
+  resolved; PyPI direct references (`tool @ https://host/tool.whl`, VCS,
+  paths) resolve to no package, and only registry-shaped names and versions
+  are ever sent to a registry; `uvx pkg@0.6.2` is the exact version `0.6.2` and is
   now verified; option values such as `uvx -p 3.12` or `pipx run --python
   3.12` are no longer taken for the package; and `npm run`/`npm start` launch
   no registry package. Moving versions (`npx pkg@latest`, `pkg@^1.2.0`) are no

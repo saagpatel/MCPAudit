@@ -178,6 +178,16 @@ _PIPX_VALUE_FLAGS = {
 }
 
 _NPM_EXACT_VERSION = re.compile(r"v?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?")
+# Registry-shaped names and versions. Anything else (a URL, a VCS or file source, a
+# path) is never sent to a registry, so a credential inside it can never leave.
+_NPM_NAME = re.compile(r"(?:@[a-z0-9~][a-z0-9._~-]*/)?[a-z0-9~][a-z0-9._~-]*", re.IGNORECASE)
+_PYPI_NAME = re.compile(r"[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?", re.IGNORECASE)
+# PEP 440 public versions plus an optional local label, e.g. 1.4.0, 2!1.0rc1, 1.0.post2.dev3+abc.1.
+_PYPI_EXACT_VERSION = re.compile(
+    r"(?:\d+!)?\d+(?:\.\d+)*(?:[._-]?(?:a|b|c|rc|alpha|beta|pre|preview)[._-]?\d*)?"
+    r"(?:-\d+|[._-]?(?:post|rev|r)[._-]?\d*)?(?:[._-]?dev[._-]?\d*)?(?:\+[a-z0-9]+(?:[._-][a-z0-9]+)*)?",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -196,14 +206,21 @@ class PackageRef:
         """True when ``version`` names one immutable release a registry can be asked for.
 
         npm: a semver version (not a dist-tag such as ``latest`` or a range such as
-        ``^1.2.0``). PyPI: an ``==`` version without a ``*`` wildcard. Only exact refs
-        are captured at pin time and verified at check time.
+        ``^1.2.0``). PyPI: a PEP 440 version (no ``*`` wildcard). The name must be
+        registry-shaped too. Only exact refs are captured at pin time and verified at
+        check time, so nothing else is ever sent to a registry.
         """
         if not self.version:
             return False
         if self.ecosystem == "npm":
-            return _NPM_EXACT_VERSION.fullmatch(self.version) is not None
-        return "*" not in self.version
+            return (
+                _NPM_NAME.fullmatch(self.name) is not None
+                and _NPM_EXACT_VERSION.fullmatch(self.version) is not None
+            )
+        return (
+            _PYPI_NAME.fullmatch(self.name) is not None
+            and _PYPI_EXACT_VERSION.fullmatch(self.version) is not None
+        )
 
 
 def _split_npm_spec(spec: str) -> tuple[str, str | None]:
@@ -314,36 +331,86 @@ def _split_requirements(value: str) -> list[str]:
     return [part.strip() for part in parts if part.strip()]
 
 
+def _is_direct_reference(spec: str) -> bool:
+    """True for a requirement that names a source instead of a registry release.
+
+    PEP 508 direct references (``tool @ https://host/tool.whl``), VCS and file
+    sources, and paths are not registry packages.
+    """
+    requirement = spec.split(";", 1)[0].strip()
+    return any(char in requirement for char in "/\\:") or re.search(r"\s@|@\s", requirement) is not None
+
+
+def _pypi_ref(spec: str, *, at_version: bool = False) -> PackageRef | None:
+    """A PyPI ref for a registry requirement, or None for a direct reference."""
+    if _is_direct_reference(spec):
+        return None
+    name, version = _split_pypi_spec(spec, at_version=at_version)
+    return PackageRef("pypi", name, version) if name else None
+
+
 def _with_refs(parsed: _ParsedArgs) -> list[PackageRef]:
     """Registry packages uv installs alongside the command (``--with a==1,b`` or ``-w``)."""
     refs: list[PackageRef] = []
     for value in [*parsed.values.get("--with", []), *parsed.values.get("-w", [])]:
         for requirement in _split_requirements(value):
-            if requirement:
-                name, version = _split_pypi_spec(requirement, at_version=True)
-                if name:
-                    refs.append(PackageRef("pypi", name, version))
+            ref = _pypi_ref(requirement, at_version=True)
+            if ref is not None:
+                refs.append(ref)
     return refs
 
 
-def _npm_package_values(parsed: _ParsedArgs) -> list[str]:
-    return [value for flag in ("--package", "-p") for value in parsed.values.get(flag, [])]
+def _npm_spec_refs(specs: list[str]) -> list[PackageRef]:
+    return [PackageRef("npm", *_split_npm_spec(spec)) for spec in specs if spec]
 
 
-def _npm_refs(args: list[str], outer_packages: list[str] | None = None) -> list[PackageRef]:
-    """``npx``/``npm exec`` args: ``--package`` (before or after ``exec``) or the first positional."""
+def _npx_refs(args: list[str]) -> list[PackageRef]:
+    """``npx``: options end at the first positional. Every ``--package``/``-p`` is a
+    package; without one, the first positional is."""
     parsed = _parse_runner_args(args, _NPM_VALUE_FLAGS | _NPM_PACKAGE_FLAGS)
-    named = [*(outer_packages or []), *_npm_package_values(parsed)]
-    spec = named[0] if named else parsed.positional
-    return [PackageRef("npm", *_split_npm_spec(spec))] if spec else []
+    named = [value for flag in ("--package", "-p") for value in parsed.values.get(flag, [])]
+    return _npm_spec_refs(named or [parsed.positional or ""])
+
+
+def _npm_refs(args: list[str]) -> list[PackageRef]:
+    """``npm``: options are read anywhere until ``--`` (unlike npx), and ``-p`` is the
+    boolean ``--parseable``, not a package. Only ``exec``/``x`` launch a package: every
+    ``--package``, or else the command."""
+    packages: list[str] = []
+    positionals: list[str] = []
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--":
+            positionals.extend(args[i + 1 :])
+            break
+        flag, has_value, value = arg.partition("=")
+        if arg.startswith("-") and has_value and flag == "--package":
+            packages.append(value)
+            i += 1
+        elif arg == "--package":
+            packages.extend(args[i + 1 : i + 2])
+            i += 2
+        elif arg.startswith("-") and has_value and flag in _NPM_VALUE_FLAGS:
+            i += 1
+        elif arg in _NPM_VALUE_FLAGS:
+            i += 2
+        elif arg.startswith("-"):
+            i += 1
+        else:
+            positionals.append(arg)
+            i += 1
+    if not positionals or positionals[0] not in {"exec", "x"}:
+        return []
+    return _npm_spec_refs(packages or positionals[1:2])
 
 
 def _uv_tool_run_refs(args: list[str]) -> list[PackageRef]:
     """``uvx`` / ``uv tool run``: the package (``--from`` or the command) plus ``--with``."""
     parsed = _parse_runner_args(args, _UV_VALUE_FLAGS)
     source = parsed.values.get("--from", [None])[0] or parsed.positional
-    refs = [PackageRef("pypi", *_split_pypi_spec(source, at_version=True))] if source else []
-    return refs + _with_refs(parsed)
+    ref = _pypi_ref(source, at_version=True) if source else None
+    return ([ref] if ref else []) + _with_refs(parsed)
 
 
 def resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
@@ -360,25 +427,25 @@ def _resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
     Best-effort: returns an empty list when the launch isn't a recognised package
     runner or the spec can't be parsed (never invents a ref). Per runner:
 
-    - ``npx`` and ``npm exec``/``npm x``: the package (``--package``/``-p`` or the
-      first positional). Other ``npm`` subcommands (``npm run build``) launch no
-      registry package.
+    - ``npx``: every ``--package``/``-p``, or else the first positional.
+    - ``npm exec``/``npm x``: every ``--package`` (npm reads options anywhere until
+      ``--``; its ``-p`` is ``--parseable``), or else the command. Other ``npm``
+      subcommands (``npm run build``) launch no registry package.
     - ``uvx`` and ``uv tool run``: the package (``--from`` or the command; ``pkg==1.0``
       and uv's ``pkg@1.0``) plus each ``--with`` requirement.
     - ``uv run``: only ``--with`` requirements; the command or script is local.
     - ``pipx run``: the package (``--spec`` or the first positional) plus ``--with``.
+
+    PyPI direct references (``tool @ https://host/tool.whl``, VCS, paths) are not
+    registry packages and resolve to nothing.
     """
     command = (server_config.command or "").rsplit("/", 1)[-1].lower()
     args = [str(a) for a in server_config.args]
 
     if command == "npx":
-        return _npm_refs(args)
+        return _npx_refs(args)
     if command == "npm":
-        # npm accepts its config options (--package among them) before the subcommand.
-        parsed = _parse_runner_args(args, _NPM_VALUE_FLAGS | _NPM_PACKAGE_FLAGS)
-        if parsed.positional not in {"exec", "x"}:
-            return []
-        return _npm_refs(parsed.rest, _npm_package_values(parsed))
+        return _npm_refs(args)
     if command == "uvx":
         return _uv_tool_run_refs(args)
     if command == "uv":
@@ -394,8 +461,8 @@ def _resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
             return []
         run = _parse_runner_args(parsed.rest, _PIPX_VALUE_FLAGS)
         spec = run.values.get("--spec", [None])[0] or run.positional
-        refs = [PackageRef("pypi", *_split_pypi_spec(spec))] if spec else []
-        return refs + _with_refs(run)
+        ref = _pypi_ref(spec) if spec else None
+        return ([ref] if ref else []) + _with_refs(run)
     return []
 
 
