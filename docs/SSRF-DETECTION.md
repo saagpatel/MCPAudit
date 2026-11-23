@@ -81,7 +81,11 @@ The npm-style shorthand `github:owner/repo` has no `//` authority; its host is
 github.com, so `github:owner/{repo}` is a `remote_uri_path_template` (low), the
 same as `https://github.com/owner/{repo}`. SSRF allowlisting and egress resolve it
 to github.com too, so `--ssrf-allowlist github.com` suppresses it and egress
-reports a fixed github.com destination rather than unbounded egress.
+reports a fixed github.com destination rather than unbounded egress. Only a clean
+shorthand gets the implied host: after the tab, CR and LF characters a URI parser
+drops, it must have no authority and no `//` or backslash anywhere. So
+`github:\n//{host}/repo`, whose authority is `{host}`, stays a high
+`remote_uri_host_template` that allowlisting cannot suppress.
 
 Only resource findings have a fixed host. A tool finding is always
 caller-controlled, whatever the tool is called: a tool named `github:fetch` or

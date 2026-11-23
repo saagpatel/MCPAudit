@@ -277,10 +277,33 @@ class TestSsrfAllowlist:
         ("github://owner/repo", "owner"),  # authority form: the authority is the host, as before
         ("git:owner/{repo}", None),  # no implied host for other authority-less schemes
         ("s3:bucket/{key}", None),
+        ("github:/owner/{repo}", "github.com"),
+        # urlparse drops tab, CR and LF, so these have an authority: never the implied host.
+        ("github:\n//{host}/repo", None),
+        ("github:\r//{host}/repo", None),
+        ("github:\t//evil.example/{repo}", None),
+        ("github:\\\\{host}/repo", None),  # backslashes another parser may read as "//"
+        ("github:owner//{repo}", None),
     ],
 )
 def test_fixed_host_resolves_github_shorthand(uri: str, host: str | None) -> None:
     assert fixed_host_from_uri(uri) == host
+
+
+@mark.parametrize(
+    "uri",
+    [
+        "github:\n//{host}/repo",
+        "github:\r//{host}/repo",
+        "github:\t//{host}/repo",
+        "github:\t//evil.example/{repo}",
+    ],
+    ids=repr,
+)
+def test_github_allowlist_never_suppresses_a_control_hidden_authority(uri: str) -> None:
+    findings = SsrfDetector().scan_resource(ResourceInfo(uri=uri, name="repo"))
+    kept, dropped = filter_allowlisted_ssrf(findings, {"github.com"})
+    assert findings and kept == findings and dropped == 0
 
 
 def test_github_shorthand_template_stays_a_low_path_template() -> None:

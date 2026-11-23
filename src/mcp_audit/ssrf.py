@@ -598,7 +598,8 @@ def parse_host_allowlist(raw: str | None) -> set[str]:
 # Authority-less shorthands whose destination host the scheme implies, as in the
 # npm-style ``github:owner/repo``. Everything after the colon is a path on that host.
 _IMPLIED_HOSTS = {"github": "github.com"}
-_SHORTHAND_SCHEME_RE = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*):(?!//)")
+# Characters urlparse removes anywhere in a URL before splitting it.
+_URI_STRIPPED_CONTROLS = str.maketrans("", "", "\t\r\n")
 
 
 def fixed_host_from_uri(uri: str) -> str | None:
@@ -615,9 +616,17 @@ def fixed_host_from_uri(uri: str) -> str | None:
     Shared host-truth for both SSRF allowlisting and egress destination analysis, so
     the two detectors never disagree about what host a target resolves to.
     """
-    shorthand = _SHORTHAND_SCHEME_RE.match(uri)
-    if shorthand is not None and shorthand.group(1).lower() in _IMPLIED_HOSTS:
-        return _IMPLIED_HOSTS[shorthand.group(1).lower()]
+    # Only a clean shorthand gets the implied host. Read the scheme and authority with
+    # the parser scan_resource uses, which drops embedded tab, CR and LF, so
+    # "github:\n//{host}/x" has a (templated) authority; and refuse any "//" or backslash
+    # that another parser could read as one. Anything else keeps the behavior below,
+    # which never yields an allowlistable host for an authority-less URI.
+    parts = split_uri(uri)
+    implied = _IMPLIED_HOSTS.get(parts.scheme.lower())
+    if implied is not None and not parts.netloc:
+        cleaned = uri.translate(_URI_STRIPPED_CONTROLS)
+        if "//" not in cleaned and "\\" not in cleaned:
+            return implied
     if "://" not in uri:
         return None
     try:

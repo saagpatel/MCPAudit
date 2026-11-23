@@ -110,6 +110,15 @@ def test_github_shorthand_matches_its_https_form(
     assert all(kind is not EgressKind.UNBOUNDED_EGRESS for kind, _, _ in classify(shorthand))
 
 
+@pytest.mark.parametrize(
+    "uri", ["github:\n//{host}/repo", "github:\r//{host}/repo", "github:\t//{host}/repo"], ids=repr
+)
+@pytest.mark.parametrize("allowlist", [set(), {"github.com"}], ids=["no-allowlist", "github-allowlisted"])
+def test_control_hidden_github_authority_stays_unbounded(uri: str, allowlist: set[str]) -> None:
+    findings = EgressDetector(allowlist=allowlist).scan_server(_audit(resources=[ResourceInfo(uri=uri)]))
+    assert [(f.kind, f.severity) for f in findings] == [(EgressKind.UNBOUNDED_EGRESS, EgressSeverity.HIGH)]
+
+
 @pytest.mark.parametrize("name", ["github:fetch", "https://trusted.com/fetch"])
 @pytest.mark.parametrize(
     "allowlist", [set(), {"github.com", "trusted.com"}], ids=["no-allowlist", "names-allowlisted"]
