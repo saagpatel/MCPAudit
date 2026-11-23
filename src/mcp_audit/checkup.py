@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import os
-import re
 import stat
 from pathlib import Path
 
@@ -74,16 +73,7 @@ def vitals(report: AuditReport) -> list[tuple[str, int, bool]]:
         return entry is not None and entry.state == "complete"
 
     floating = sum(
-        any(
-            ref.version is None
-            or (
-                ref.ecosystem == "npm"
-                and re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?", ref.version) is None
-            )
-            or (ref.ecosystem == "pypi" and "*" in ref.version)
-            for ref in resolve_package_refs(audit.server)
-        )
-        for audit in report.audits
+        any(not ref.is_exact for ref in resolve_package_refs(audit.server)) for audit in report.audits
     )
     return [
         (

@@ -7,7 +7,11 @@ PackageVerifier, and the resolver is exercised on hand-built ServerConfigs.
 from __future__ import annotations
 
 import json
+import time
+from collections.abc import Callable
 from typing import Any
+
+import pytest
 
 from mcp_audit.models import (
     ClientType,
@@ -16,7 +20,14 @@ from mcp_audit.models import (
     ServerConfig,
     TransportType,
 )
-from mcp_audit.pkgverify import PackageRef, PackageVerifier, resolve_package_refs
+from mcp_audit.pkgverify import (
+    ArtifactVerifier,
+    PackageRef,
+    PackageVerifier,
+    _pypi_ref,
+    resolve_package_refs,
+    verification_coverage,
+)
 
 
 def _cfg(command: str | None, args: list[str]) -> ServerConfig:
@@ -58,6 +69,246 @@ class TestResolver:
     def test_non_runner_command_yields_nothing(self) -> None:
         assert resolve_package_refs(_cfg("python", ["server.py"])) == []
         assert resolve_package_refs(_cfg(None, [])) == []
+
+
+@pytest.mark.parametrize(
+    "command,args,expected",
+    [
+        # uv run: the command or script is local; only --with requirements come from PyPI.
+        ("uv", ["run", "--with", "pkg==1.0", "server.py"], [("pkg", "1.0")]),
+        ("uv", ["run", "server.py"], []),
+        ("uv", ["run", "--with", "fastmcp", "fastmcp", "run", "server.py"], [("fastmcp", None)]),
+        (
+            "uv",
+            ["run", "--directory", "/x", "--with=a==1,b[cli]==2", "main.py", "--with", "c==3"],
+            [("a", "1"), ("b", "2")],
+        ),
+        # uvx / uv tool run: the package plus --with; uv's pkg@version spelling is exact.
+        ("uv", ["tool", "run", "mcp-server-git==1.4.0"], [("mcp-server-git", "1.4.0")]),
+        ("uvx", ["pkg@0.6.2"], [("pkg", "0.6.2")]),
+        ("uvx", ["pkg@latest"], [("pkg", None)]),
+        ("uvx", ["--from", "tool==1.0", "tool-cli"], [("tool", "1.0")]),
+        ("uvx", ["-p", "3.12", "--with", "dep==2", "pkg==1"], [("pkg", "1"), ("dep", "2")]),
+        ("uvx", ["--python=3.12", "mcp[cli]==1.2.0"], [("mcp", "1.2.0")]),
+        ("uvx", ["--with", "pkg==1", "pkg==1"], [("pkg", "1")]),  # each ref once
+        ("uvx", ["-w", "dep==2", "pkg==1"], [("pkg", "1"), ("dep", "2")]),  # -w is --with
+        ("uv", ["run", "-w", "dep==2", "main.py"], [("dep", "2")]),
+        ("uv", ["run", "--with", "pkg[a,b]==1.0", "main.py"], [("pkg", "1.0")]),  # commas in extras
+        (
+            "uv",
+            ["run", "--with", 'a==1,pkg[x,y]==2; python_version in "3.12,3.13",c==3', "main.py"],
+            [("a", "1"), ("pkg", "2"), ("c", "3")],
+        ),
+        # npm: only exec/x launch a registry package.
+        ("npm", ["exec", "--", "pkg@1.0.0"], [("pkg", "1.0.0")]),
+        ("npm", ["x", "-y", "--package", "pkg@1.0.0", "--", "cmd"], [("pkg", "1.0.0")]),
+        ("npm", ["--package", "pkg@1.2.3", "exec", "cmd"], [("pkg", "1.2.3")]),  # options before exec
+        ("npm", ["--package=pkg@1.2.3", "exec", "cmd"], [("pkg", "1.2.3")]),
+        # npm reads options anywhere until "--"; npx stops at the first positional.
+        ("npm", ["exec", "tool-cli", "--package=tool@1.0.0"], [("tool", "1.0.0")]),
+        ("npx", ["tool-cli", "--package=tool@1.0.0"], [("tool-cli", None)]),
+        ("npm", ["exec", "--", "pkg@1.0.0", "--package=x@9.9.9"], [("pkg", "1.0.0")]),
+        # Every --package is installed.
+        (
+            "npx",
+            ["--package=tool-a@1.0.0", "--package=tool-b@2.0.0", "cmd"],
+            [("tool-a", "1.0.0"), ("tool-b", "2.0.0")],
+        ),
+        (
+            "npm",
+            ["exec", "--package", "a@1.0.0", "--package=b@2.0.0", "--", "cmd"],
+            [("a", "1.0.0"), ("b", "2.0.0")],
+        ),
+        # In npm, -p is the boolean --parseable, not a package.
+        ("npm", ["exec", "-p", "--", "tool@1.0.0"], [("tool", "1.0.0")]),
+        ("npm", ["-p", "exec", "tool@1.0.0"], [("tool", "1.0.0")]),
+        # PyPI direct references are sources, not registry packages.
+        ("uvx", ["--from", "tool @ https://user:secret@example.invalid/tool.whl", "tool"], []),
+        ("uvx", ["tool@https://user:secret@example.invalid/tool.whl"], []),
+        (
+            "uv",
+            ["run", "--with", "dep @ git+https://tok@github.com/o/r.git", "--with", "ok==1", "main.py"],
+            [("ok", "1")],
+        ),
+        ("pipx", ["run", "--spec", "git+https://tok@github.com/o/r.git", "cmd"], []),
+        ("uvx", ["./local/pkg"], []),
+        ("npm", ["run", "build"], []),
+        ("npm", ["start"], []),
+        # pipx run: --spec or the first positional; other subcommands launch nothing.
+        ("pipx", ["run", "--spec", "pkg==1.0", "cmd"], [("pkg", "1.0")]),
+        ("pipx", ["run", "--python", "3.12", "pkg==1.0"], [("pkg", "1.0")]),
+        ("pipx", ["run", "--with", "dep==2", "--cooldown", "7", "pkg==1.0"], [("pkg", "1.0"), ("dep", "2")]),
+        # pipx takes one requirement per --with: no comma split, no uv @ spelling.
+        ("pipx", ["run", "--with", "a==1,b==2", "pkg==1.0"], [("pkg", "1.0")]),  # not one valid requirement
+        ("uvx", ["pkg==2!1.0"], [("pkg", "2!1.0")]),  # PEP 440 epoch
+        ("uvx", ["pkg==1.0,<2"], [("pkg", None)]),  # a compound specifier pins no release
+        ("pipx", ["run", "--with", "dep[x,y]==2", "pkg==1.0"], [("pkg", "1.0"), ("dep", "2")]),
+        ("uvx", ["-C", "k=v", "-P", "dep", "pkg==1"], [("pkg", "1")]),  # value options from uv's help
+        ("npm", ["exec", "--loglevel", "warn", "--", "pkg@1.0.0"], [("pkg", "1.0.0")]),
+        ("pipx", ["install", "pkg"], []),
+    ],
+    ids=lambda value: (
+        " ".join(value) if isinstance(value, list) and all(isinstance(v, str) for v in value) else None
+    ),
+)
+def test_runner_grammar_resolves_only_registry_packages(
+    command: str, args: list[str], expected: list[tuple[str, str | None]]
+) -> None:
+    assert [(ref.name, ref.version) for ref in resolve_package_refs(_cfg(command, args))] == expected
+
+
+@pytest.mark.parametrize(
+    "ref,exact",
+    [
+        (PackageRef("npm", "pkg", "1.2.3"), True),
+        (PackageRef("npm", "pkg", "v1.2.3-beta.1"), True),
+        (PackageRef("npm", "pkg", "latest"), False),
+        (PackageRef("npm", "pkg", "^1.2.0"), False),
+        (PackageRef("pypi", "pkg", "0.6.2"), True),
+        (PackageRef("pypi", "pkg", "1.0.*"), False),
+        (PackageRef("pypi", "pkg", None), False),
+        (PackageRef("pypi", "pkg", "2!1.0rc1.post2.dev3+abc.1"), True),
+        (PackageRef("pypi", "pkg", "v1.2.3"), True),  # PEP 440 allows a leading v
+        (PackageRef("npm", "@scope/_pkg", "1.2.3"), True),  # legal for existing packages
+        (PackageRef("npm", "@_scope/pkg", "1.2.3"), True),
+        (PackageRef("npm", "_pkg", "1.2.3"), True),
+        (PackageRef("npm", "@scope/.pkg", "1.2.3"), False),
+        (PackageRef("npm", "@../x", "1.2.3"), False),
+        # Never registry-shaped, so never fetched.
+        (PackageRef("pypi", "tool ", "https://user:secret@example.invalid/tool.whl"), False),
+        (PackageRef("pypi", "pkg", "1.0/../../x"), False),
+        (PackageRef("npm", "git+https://user:tok", "1.0.0"), False),
+    ],
+)
+def test_is_exact(ref: PackageRef, exact: bool) -> None:
+    assert ref.is_exact is exact
+
+
+@pytest.mark.parametrize("spec", ["pkg@latest", "pkg@^1.2.0", "pkg@1.x"])
+def test_moving_npm_versions_are_not_captured(spec: str) -> None:
+    # Check time verifies exact versions only, so a baseline for a dist-tag or range
+    # would sit in the pin store unchecked forever.
+    fetched: list[str] = []
+
+    def fake_fetch(ref: PackageRef) -> str | None:
+        fetched.append(ref.key())
+        return "sha512-x"
+
+    assert PackageVerifier(fetch=fake_fetch).capture(_cfg("npx", ["-y", spec])) == {}
+    assert fetched == []
+
+
+@pytest.mark.parametrize(
+    "command,args,key",
+    [
+        ("npx", ["-y", "@scope/_pkg@1.2.3"], "npm:@scope/_pkg:1.2.3"),
+        ("npx", ["-y", "@_scope/pkg@1.2.3"], "npm:@_scope/pkg:1.2.3"),
+        ("uvx", ["pkg==v1.2.3"], "pypi:pkg:v1.2.3"),
+    ],
+    ids=["npm @scope/_pkg", "npm @_scope/pkg", "pypi ==v1.2.3"],
+)
+def test_valid_registry_spellings_keep_their_baseline_key(command: str, args: list[str], key: str) -> None:
+    # The key is the one main captured, so existing baselines keep verifying.
+    cfg = _cfg(command, args)
+    table = {key: "hash-a"}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    assert verifier.capture(cfg) == {key: "hash-a"}
+    table[key] = "hash-b"
+    findings = verifier.analyze_server("srv", cfg, {key: "hash-a"})
+    assert [(f.kind, f.severity) for f in findings] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH)
+    ]
+
+
+def test_uvx_at_version_is_captured_and_verified() -> None:
+    cfg = _cfg("uvx", ["pkg@0.6.2"])
+    table = {"pypi:pkg:0.6.2": "sha256-a"}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    baseline = verifier.capture(cfg)
+    assert baseline == {"pypi:pkg:0.6.2": "sha256-a"}
+    table["pypi:pkg:0.6.2"] = "sha256-b"
+    findings = verifier.analyze_server("srv", cfg, baseline)
+    assert [(f.kind, f.severity, f.package, f.version) for f in findings] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH, "pkg", "0.6.2")
+    ]
+
+
+@pytest.mark.parametrize(
+    "command,args,count",
+    [
+        ("uvx", ["-w", "dep==2", "pkg==1"], 2),
+        ("npm", ["--package", "pkg@1.2.3", "exec", "cmd"], 1),
+        ("npx", ["--package=tool-a@1.0.0", "--package=tool-b@2.0.0", "cmd"], 2),
+        ("npm", ["exec", "tool-cli", "--package=tool@1.0.0"], 1),
+    ],
+    ids=["uvx -w", "npm --package before exec", "npx repeated --package", "npm --package after command"],
+)
+def test_every_launched_package_is_captured_verified_and_covered(
+    command: str, args: list[str], count: int
+) -> None:
+    cfg = _cfg(command, args)
+    table = {ref.key(): f"hash-{ref.name}" for ref in resolve_package_refs(cfg)}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    baseline = verifier.capture(cfg)
+    assert len(baseline) == count and baseline == table
+    verified: set[str] = set()
+    assert verifier.analyze_server("srv", cfg, baseline, verified) == []
+    assert verification_coverage(cfg, baseline, verified).state == "complete"
+    last = sorted(table)[-1]
+    table[last] = "changed"
+    drift = verifier.analyze_server("srv", cfg, baseline)
+    assert [(f.kind, f.severity) for f in drift] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH)
+    ]
+
+
+@pytest.mark.parametrize(
+    "command,args",
+    [
+        ("uvx", ["--from", "tool @ https://user:secret@example.invalid/tool.whl", "tool"]),
+        ("uvx", ["tool@https://user:secret@example.invalid/tool.whl"]),
+        ("uv", ["run", "--with", "dep @ git+https://user:secret@github.com/o/r.git", "main.py"]),
+        ("pipx", ["run", "--spec", "git+https://user:secret@github.com/o/r.git", "cmd"]),
+        ("npx", ["-y", "git+https://user:secret@github.com/o/r.git"]),
+        # A comma inside a URL must never split it into a fake requirement.
+        (
+            "pipx",
+            ["run", "--with", "dep @ https://example.invalid/dep.whl?token=prefix,private_token==1.0", "cmd"],
+        ),
+        ("uvx", ["--with", "dep @ https://example.invalid/dep.whl?token=prefix,private_token==1.0", "cmd"]),
+        ("uv", ["run", "--with", "ok==1,dep @ https://example.invalid/d.whl?t=a,secret==2", "main.py"]),
+    ],
+    ids=[
+        "uvx --from direct url",
+        "uvx name@url",
+        "uv run --with vcs",
+        "pipx --spec vcs",
+        "npx git url",
+        "pipx --with url with comma",
+        "uvx --with url with comma",
+        "uv run --with list holding a url",
+    ],
+)
+def test_source_specs_are_never_sent_to_a_registry(command: str, args: list[str]) -> None:
+    fetched: list[str] = []
+
+    def fetch_hash(ref: PackageRef) -> str | None:
+        fetched.append(ref.key())
+        return "h"
+
+    def fetch_artifact(ref: PackageRef) -> None:
+        fetched.append(ref.key())
+
+    cfg = _cfg(command, args)
+    PackageVerifier(fetch=fetch_hash).capture(cfg)
+    ArtifactVerifier(fetch=fetch_artifact).capture(cfg)
+    assert fetched == []
+
+
+def test_uv_run_with_requirement_is_verified_not_the_script() -> None:
+    cfg = _cfg("uv", ["run", "--with", "pkg==1.0", "server.py"])
+    baseline = PackageVerifier(fetch=lambda ref: "sha256-a").capture(cfg)
+    assert baseline == {"pypi:pkg:1.0": "sha256-a"}
 
 
 class TestVerifier:
@@ -121,3 +372,127 @@ class TestVerifier:
         assert data["rule_id"] == "MCP025"
         assert data["ecosystem"] == "npm"
         assert data["description"] == finding.summary
+
+
+_SECRET_SOURCES = [
+    "https://user:SECRET@example.invalid/pkg.whl",
+    "https://example.invalid/pkg.whl?token=SECRET",
+    "https://example.invalid/pkg.whl?t=a,SECRET==1.0",
+    "https://example.invalid/pkg.whl?t=a,SECRET@1.0.0",
+    "https://example.invalid/dep.whl?token=x,SECRET@1.0",
+    "https://example.invalid/d.whl?x=1;SECRET==1.0",
+    "https://example.invalid/pkg.tgz#SECRET==1.0",
+    "git+https://SECRET@github.com/o/r.git@v1.0.0",
+    "git+ssh://git@github.com/o/SECRET.git",
+    "file:///tmp/SECRET==1.0",
+]
+_SECRET_FORMS: list[tuple[str, Callable[[str], list[str]]]] = [
+    ("uvx", lambda src: ["--from", f"pkg @ {src}", "cmd"]),
+    ("uvx", lambda src: [f"pkg@{src}"]),
+    ("uvx", lambda src: ["--with", f"dep @ {src}", "pkg==1.0"]),
+    ("uvx", lambda src: ["-w", f"ok==1,dep @ {src}", "pkg==1.0"]),
+    ("uv", lambda src: ["run", "--with", f"dep @ {src}", "main.py"]),
+    ("uv", lambda src: ["tool", "run", "--from", src, "cmd"]),
+    ("pipx", lambda src: ["run", "--spec", src, "cmd"]),
+    ("pipx", lambda src: ["run", "--with", f"dep @ {src}", "pkg==1.0"]),
+    ("npx", lambda src: ["-y", src]),
+    ("npx", lambda src: ["--package", src, "cmd"]),
+    ("npm", lambda src: ["exec", "--package", src, "--", "cmd"]),
+    # A marker on an earlier requirement must not hide a later URL.
+    ("uvx", lambda src: ["--with", f'ok; python_version > "3.8",dep @ {src}', "pkg==1.0"]),
+    ("uv", lambda src: ["run", "--with", f"ok;python_version>'3.8',dep @ {src}", "main.py"]),
+    ("pipx", lambda src: ["run", "--with", f'ok; python_version > "3.8",dep @ {src}', "pkg==1.0"]),
+]
+
+
+@pytest.mark.parametrize("source", _SECRET_SOURCES)
+@pytest.mark.parametrize("form", range(len(_SECRET_FORMS)))
+def test_no_part_of_a_source_url_reaches_a_registry(form: int, source: str) -> None:
+    command, build = _SECRET_FORMS[form]
+    fetched: list[str] = []
+
+    def fetch_hash(ref: PackageRef) -> str | None:
+        fetched.append(ref.key())
+        return "h"
+
+    def fetch_artifact(ref: PackageRef) -> None:
+        fetched.append(ref.key())
+
+    cfg = _cfg(command, build(source))
+    PackageVerifier(fetch=fetch_hash).capture(cfg)
+    ArtifactVerifier(fetch=fetch_artifact).capture(cfg)
+    assert not [key for key in fetched if "SECRET" in key], fetched
+
+
+@pytest.mark.parametrize(
+    "spec,at_version,expected",
+    [
+        ("pkg==1.4.0", False, ("pkg", "1.4.0")),
+        ("pkg[cli,extra]==1.4.0", False, ("pkg", "1.4.0")),
+        ("pkg == 2!1.0rc1", False, ("pkg", "2!1.0rc1")),
+        ("pkg==v1.2.3", False, ("pkg", "v1.2.3")),
+        ("pkg>=1,<2", False, ("pkg", None)),
+        ("pkg==1.0,<2", False, ("pkg", None)),
+        ("pkg==1.0.*", False, ("pkg", None)),
+        ('pkg==1.0; python_version >= "3.10"', False, ("pkg", "1.0")),
+        ("pkg@0.6.2", True, ("pkg", "0.6.2")),
+        ("pkg@latest", True, ("pkg", None)),
+        ("pkg@0.6.2", False, None),  # @version is uv-only
+        ("pkg @ https://example.invalid/pkg.whl", True, None),
+        ("pkg@https://example.invalid/pkg.whl", True, None),
+        ("git+https://github.com/o/r.git", False, None),
+        ("./local/pkg", False, None),
+        ("pkg==1.0; extra == 'https://x'", False, None),
+        ("", False, None),
+    ],
+)
+def test_pypi_requirement_grammar(
+    spec: str, at_version: bool, expected: tuple[str, str | None] | None
+) -> None:
+    ref = _pypi_ref(spec, at_version=at_version)
+    assert (None if ref is None else (ref.name, ref.version)) == expected
+
+
+def test_pypi_epoch_keeps_verifying_an_existing_baseline() -> None:
+    cfg = _cfg("uvx", ["pkg==2!1.0"])
+    table = {"pypi:pkg:2!1.0": "hash-a"}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    assert verifier.capture(cfg) == {"pypi:pkg:2!1.0": "hash-a"}
+    table["pypi:pkg:2!1.0"] = "hash-b"
+    findings = verifier.analyze_server("srv", cfg, {"pypi:pkg:2!1.0": "hash-a"})
+    assert [(f.kind, f.severity) for f in findings] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH)
+    ]
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "pkg" + " " * 200_000 + "/",
+        "pkg" + " \t" * 100_000 + "[" + " " * 100_000 + "/",
+        "pkg[" + "a, " * 100_000 + "/",
+        "pkg==1" + ", ==1" * 100_000 + "/",
+        "pkg" + " " * 400 + "/",  # under the length cap: collapsed whitespace keeps it linear
+        "pkg[" + "a , " * 120 + "/",
+    ],
+    ids=[
+        "spaces",
+        "spaces-and-bracket",
+        "long-extras",
+        "long-specifiers",
+        "under-cap-spaces",
+        "under-cap-extras",
+    ],
+)
+def test_malformed_requirements_are_rejected_promptly(spec: str) -> None:
+    # Launch args are untrusted and unbounded (a config may be up to 1 MiB), and checkup
+    # resolves refs offline, so the grammar must reject long malformed text in linear time.
+    started = time.perf_counter()
+    for command, args in (
+        ("uvx", [spec]),
+        ("uv", ["run", "--with", spec, "main.py"]),
+        ("pipx", ["run", spec]),
+    ):
+        assert resolve_package_refs(_cfg(command, args)) == []
+    PackageVerifier(fetch=lambda ref: None).capture(_cfg("uvx", [spec]))
+    assert time.perf_counter() - started < 2.0

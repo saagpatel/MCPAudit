@@ -33,8 +33,29 @@ so this check compares the **registry-published hash** for the exact pinned
 - **Exact version only.** The check keys by `package@version`. A version *float*
   (the config now launches a different version than pinned) is provenance's job
   (`MCP021`), not this one — so `--verify-artifacts` never double-reports a float.
-- **Ecosystems:** npm (`npx`/`npm`) and PyPI (`uvx`/`pipx`/`uv`). Unrecognised
-  runners and unparseable specs yield nothing (no invented references).
+- **Registry-shaped only.** Only a registry-shaped name with an exact version is
+  ever sent to a registry. A PyPI requirement yields a package only when the whole
+  string is one plain requirement: a name, optional extras, optional version
+  specifiers (or uv's `@version`), and an optional marker of plain characters.
+  Direct references (`tool @ https://host/tool.whl`), VCS and file sources, paths,
+  and any `--with` list with an item that is not such a requirement resolve to no
+  package, so no part of a URL, credential included, ever leaves the machine.
+- **Exact means immutable.** npm needs a semver version (`pkg@1.2.3`); a dist-tag
+  or range (`pkg@latest`, `pkg@^1.2.0`) is never captured or verified, so the pin
+  store holds no hash that check time would skip. PyPI needs `==` without a `*`
+  wildcard (`pkg==1.4.0`), or uv's `pkg@1.4.0` spelling (`pkg@latest` is not exact).
+- **Ecosystems and runners.** Each runner's own option grammar decides which
+  registry packages a launch installs, so option values are never mistaken for
+  the package. Unrecognised runners and unparseable specs yield nothing (no
+  invented references): `uv run server.py` resolves no package.
+  - npm: `npx` (every `--package`/`-p`, or else the first positional; options
+    end at that positional) and `npm exec`/`npm x` (every `--package`, or else
+    the command; npm reads options anywhere until `--`, and its `-p` is
+    `--parseable`). Other `npm` subcommands (`npm run build`) launch no registry
+    package.
+  - PyPI: `uvx` and `uv tool run` (`--from` or the command, plus each `--with`
+    requirement), `uv run` (only its `--with` requirements: the command or script
+    it runs is local), and `pipx run` (`--spec` or the first positional, plus each `--with`).
 - **Implies a pin comparison.** Requires a baseline captured with
   `pin --verify-artifacts`; servers pinned without it are skipped with a warning.
 
