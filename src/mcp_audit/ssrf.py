@@ -595,6 +595,12 @@ def parse_host_allowlist(raw: str | None) -> set[str]:
     return {h.strip().lower() for h in raw.split(",") if h.strip()}
 
 
+# Authority-less shorthands whose destination host the scheme implies, as in the
+# npm-style ``github:owner/repo``. Everything after the colon is a path on that host.
+_IMPLIED_HOSTS = {"github": "github.com"}
+_SHORTHAND_SCHEME_RE = re.compile(r"([A-Za-z][A-Za-z0-9+.-]*):(?!//)")
+
+
 def fixed_host_from_uri(uri: str) -> str | None:
     """Extract a fixed (non-templated) host from a URI string, or None.
 
@@ -602,11 +608,16 @@ def fixed_host_from_uri(uri: str) -> str | None:
     authority, or a caller-templated host authority (``{host}``) — a caller-steerable
     target is never allowlistable. Any userinfo is stripped before the host is read,
     and a trailing ``:port`` (or an IPv6 literal's brackets) is removed. The returned
-    host is lowercased.
+    host is lowercased. An authority-less shorthand (``github:owner/{repo}``) resolves
+    to the host its scheme implies, so a template there is a path template, as SSRF
+    classifies it.
 
     Shared host-truth for both SSRF allowlisting and egress destination analysis, so
     the two detectors never disagree about what host a target resolves to.
     """
+    shorthand = _SHORTHAND_SCHEME_RE.match(uri)
+    if shorthand is not None and shorthand.group(1).lower() in _IMPLIED_HOSTS:
+        return _IMPLIED_HOSTS[shorthand.group(1).lower()]
     if "://" not in uri:
         return None
     try:

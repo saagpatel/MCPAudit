@@ -89,6 +89,27 @@ def test_empty_allowlist_flags_every_fixed_destination() -> None:
     assert findings[0].kind is EgressKind.DESTINATION_OUTSIDE_ALLOWLIST
 
 
+@pytest.mark.parametrize(
+    "shorthand,https_form",
+    [
+        ("github:owner/{repo}", "https://github.com/owner/{repo}"),
+        ("github:owner/repo", "https://github.com/owner/repo"),
+    ],
+)
+@pytest.mark.parametrize("allowlist", [set(), {"github.com"}], ids=["no-allowlist", "github-allowlisted"])
+def test_github_shorthand_matches_its_https_form(
+    shorthand: str, https_form: str, allowlist: set[str]
+) -> None:
+    # SSRF classifies github:owner/{repo} as a path template on github.com; egress must agree
+    # instead of calling it an unbounded, caller-chosen destination.
+    def classify(uri: str) -> list[tuple[EgressKind, EgressSeverity, str | None]]:
+        findings = EgressDetector(allowlist=allowlist).scan_server(_audit(resources=[ResourceInfo(uri=uri)]))
+        return [(f.kind, f.severity, f.destination_host) for f in findings]
+
+    assert classify(shorthand) == classify(https_form)
+    assert all(kind is not EgressKind.UNBOUNDED_EGRESS for kind, _, _ in classify(shorthand))
+
+
 def test_local_scheme_resource_is_not_egress() -> None:
     audit = _audit(resources=[ResourceInfo(uri="file:///etc/passwd")])
     assert EgressDetector(allowlist=set()).scan_server(audit) == []

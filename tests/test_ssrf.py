@@ -19,6 +19,7 @@ from mcp_audit.normalize import render_invisibles
 from mcp_audit.ssrf import (
     SsrfDetector,
     filter_allowlisted_ssrf,
+    fixed_host_from_uri,
     host_in_allowlist,
     parse_host_allowlist,
     split_uri,
@@ -251,6 +252,34 @@ class TestSsrfAllowlist:
         findings = [_ssrf("https://evil.com/{id}")]
         kept, dropped = filter_allowlisted_ssrf(findings, {"trusted.com"})
         assert kept == findings and dropped == 0
+
+    def test_suppresses_github_shorthand_resource(self) -> None:
+        # github:owner/{repo} is a path template on github.com, like its https:// form.
+        findings = [_ssrf("github:owner/{repo}")]
+        kept, dropped = filter_allowlisted_ssrf(findings, {"github.com"})
+        assert kept == [] and dropped == 1
+
+
+@mark.parametrize(
+    "uri,host",
+    [
+        ("github:owner/{repo}", "github.com"),
+        ("github:{owner}/repo", "github.com"),
+        ("GitHub:owner/repo", "github.com"),
+        ("github://owner/repo", "owner"),  # authority form: the authority is the host, as before
+        ("git:owner/{repo}", None),  # no implied host for other authority-less schemes
+        ("s3:bucket/{key}", None),
+    ],
+)
+def test_fixed_host_resolves_github_shorthand(uri: str, host: str | None) -> None:
+    assert fixed_host_from_uri(uri) == host
+
+
+def test_github_shorthand_template_stays_a_low_path_template() -> None:
+    findings = SsrfDetector().scan_resource(ResourceInfo(uri="github:owner/{repo}", name="repo"))
+    assert [(f.pattern_name, f.severity) for f in findings] == [
+        ("remote_uri_path_template", SsrfSeverity.LOW)
+    ]
 
 
 def _tool(name: str, description: str, properties: dict[str, object]) -> ToolInfo:
