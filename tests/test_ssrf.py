@@ -253,6 +253,14 @@ class TestSsrfAllowlist:
         kept, dropped = filter_allowlisted_ssrf(findings, {"trusted.com"})
         assert kept == findings and dropped == 0
 
+    @mark.parametrize("name", ["github:fetch", "https://trusted.com/fetch"])
+    def test_never_suppresses_tool_named_like_a_uri(self, name: str) -> None:
+        # A tool's name does not constrain its destination, whatever URI it looks like.
+        tool = _tool(name, "Fetch a URL.", {"url": {"type": "string"}})
+        findings = SsrfDetector().scan_tool(tool)
+        kept, dropped = filter_allowlisted_ssrf(findings, {"github.com", "trusted.com"})
+        assert kept == findings and dropped == 0 and len(findings) == 1
+
     def test_suppresses_github_shorthand_resource(self) -> None:
         # github:owner/{repo} is a path template on github.com, like its https:// form.
         findings = [_ssrf("github:owner/{repo}")]

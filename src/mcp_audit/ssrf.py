@@ -642,7 +642,12 @@ def _finding_fixed_host(finding: SsrfFinding) -> str | None:
     authority yield a host. Tool findings (caller-controlled URL/host params) and
     findings whose host authority is itself templated (``{host}``) yield None — a
     caller-steerable target is never allowlistable, so it can never be suppressed.
+    A tool's ``target_name`` is its name, which never constrains where it connects,
+    so a tool named ``github:fetch`` or ``https://trusted.example/fetch`` stays
+    caller-controlled. Shared by SSRF allowlisting and egress.
     """
+    if finding.target_type is not CapabilityTarget.RESOURCE:
+        return None
     return fixed_host_from_uri(finding.target_name)
 
 

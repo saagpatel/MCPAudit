@@ -83,6 +83,11 @@ same as `https://github.com/owner/{repo}`. SSRF allowlisting and egress resolve 
 to github.com too, so `--ssrf-allowlist github.com` suppresses it and egress
 reports a fixed github.com destination rather than unbounded egress.
 
+Only resource findings have a fixed host. A tool finding is always
+caller-controlled, whatever the tool is called: a tool named `github:fetch` or
+`https://trusted.example/fetch` that takes a URL is never suppressed by
+`--ssrf-allowlist` and is always unbounded egress.
+
 ## What it deliberately does not flag
 
 To stay low-noise, the check does **not** flag a tool merely because it touches the

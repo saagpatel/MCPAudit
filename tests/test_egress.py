@@ -110,6 +110,18 @@ def test_github_shorthand_matches_its_https_form(
     assert all(kind is not EgressKind.UNBOUNDED_EGRESS for kind, _, _ in classify(shorthand))
 
 
+@pytest.mark.parametrize("name", ["github:fetch", "https://trusted.com/fetch"])
+@pytest.mark.parametrize(
+    "allowlist", [set(), {"github.com", "trusted.com"}], ids=["no-allowlist", "names-allowlisted"]
+)
+def test_tool_named_like_a_uri_stays_unbounded(name: str, allowlist: set[str]) -> None:
+    audit = _audit(tools=[_tool(name, "Fetch a URL.", {"url": {"type": "string"}})])
+    findings = EgressDetector(allowlist=allowlist).scan_server(audit)
+    assert [(f.kind, f.severity, f.destination_host) for f in findings] == [
+        (EgressKind.UNBOUNDED_EGRESS, EgressSeverity.HIGH, None)
+    ]
+
+
 def test_local_scheme_resource_is_not_egress() -> None:
     audit = _audit(resources=[ResourceInfo(uri="file:///etc/passwd")])
     assert EgressDetector(allowlist=set()).scan_server(audit) == []
