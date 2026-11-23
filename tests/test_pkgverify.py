@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+import pytest
+
 from mcp_audit.models import (
     ClientType,
     PackageVerifyKind,
@@ -58,6 +60,95 @@ class TestResolver:
     def test_non_runner_command_yields_nothing(self) -> None:
         assert resolve_package_refs(_cfg("python", ["server.py"])) == []
         assert resolve_package_refs(_cfg(None, [])) == []
+
+
+@pytest.mark.parametrize(
+    "command,args,expected",
+    [
+        # uv run: the command or script is local; only --with requirements come from PyPI.
+        ("uv", ["run", "--with", "pkg==1.0", "server.py"], [("pkg", "1.0")]),
+        ("uv", ["run", "server.py"], []),
+        ("uv", ["run", "--with", "fastmcp", "fastmcp", "run", "server.py"], [("fastmcp", None)]),
+        (
+            "uv",
+            ["run", "--directory", "/x", "--with=a==1,b[cli]==2", "main.py", "--with", "c==3"],
+            [("a", "1"), ("b", "2")],
+        ),
+        # uvx / uv tool run: the package plus --with; uv's pkg@version spelling is exact.
+        ("uv", ["tool", "run", "mcp-server-git==1.4.0"], [("mcp-server-git", "1.4.0")]),
+        ("uvx", ["pkg@0.6.2"], [("pkg", "0.6.2")]),
+        ("uvx", ["pkg@latest"], [("pkg", None)]),
+        ("uvx", ["--from", "tool==1.0", "tool-cli"], [("tool", "1.0")]),
+        ("uvx", ["-p", "3.12", "--with", "dep==2", "pkg==1"], [("pkg", "1"), ("dep", "2")]),
+        ("uvx", ["--python=3.12", "mcp[cli]==1.2.0"], [("mcp", "1.2.0")]),
+        ("uvx", ["--with", "pkg==1", "pkg==1"], [("pkg", "1")]),  # each ref once
+        # npm: only exec/x launch a registry package.
+        ("npm", ["exec", "--", "pkg@1.0.0"], [("pkg", "1.0.0")]),
+        ("npm", ["x", "-y", "--package", "pkg@1.0.0", "--", "cmd"], [("pkg", "1.0.0")]),
+        ("npm", ["run", "build"], []),
+        ("npm", ["start"], []),
+        # pipx run: --spec or the first positional; other subcommands launch nothing.
+        ("pipx", ["run", "--spec", "pkg==1.0", "cmd"], [("pkg", "1.0")]),
+        ("pipx", ["run", "--python", "3.12", "pkg==1.0"], [("pkg", "1.0")]),
+        ("pipx", ["install", "pkg"], []),
+    ],
+    ids=lambda value: (
+        " ".join(value) if isinstance(value, list) and all(isinstance(v, str) for v in value) else None
+    ),
+)
+def test_runner_grammar_resolves_only_registry_packages(
+    command: str, args: list[str], expected: list[tuple[str, str | None]]
+) -> None:
+    assert [(ref.name, ref.version) for ref in resolve_package_refs(_cfg(command, args))] == expected
+
+
+@pytest.mark.parametrize(
+    "ref,exact",
+    [
+        (PackageRef("npm", "pkg", "1.2.3"), True),
+        (PackageRef("npm", "pkg", "v1.2.3-beta.1"), True),
+        (PackageRef("npm", "pkg", "latest"), False),
+        (PackageRef("npm", "pkg", "^1.2.0"), False),
+        (PackageRef("pypi", "pkg", "0.6.2"), True),
+        (PackageRef("pypi", "pkg", "1.0.*"), False),
+        (PackageRef("pypi", "pkg", None), False),
+    ],
+)
+def test_is_exact(ref: PackageRef, exact: bool) -> None:
+    assert ref.is_exact is exact
+
+
+@pytest.mark.parametrize("spec", ["pkg@latest", "pkg@^1.2.0", "pkg@1.x"])
+def test_moving_npm_versions_are_not_captured(spec: str) -> None:
+    # Check time verifies exact versions only, so a baseline for a dist-tag or range
+    # would sit in the pin store unchecked forever.
+    fetched: list[str] = []
+
+    def fake_fetch(ref: PackageRef) -> str | None:
+        fetched.append(ref.key())
+        return "sha512-x"
+
+    assert PackageVerifier(fetch=fake_fetch).capture(_cfg("npx", ["-y", spec])) == {}
+    assert fetched == []
+
+
+def test_uvx_at_version_is_captured_and_verified() -> None:
+    cfg = _cfg("uvx", ["pkg@0.6.2"])
+    table = {"pypi:pkg:0.6.2": "sha256-a"}
+    verifier = PackageVerifier(fetch=lambda ref: table.get(ref.key()))
+    baseline = verifier.capture(cfg)
+    assert baseline == {"pypi:pkg:0.6.2": "sha256-a"}
+    table["pypi:pkg:0.6.2"] = "sha256-b"
+    findings = verifier.analyze_server("srv", cfg, baseline)
+    assert [(f.kind, f.severity, f.package, f.version) for f in findings] == [
+        (PackageVerifyKind.REGISTRY_DRIFT, PackageVerifySeverity.HIGH, "pkg", "0.6.2")
+    ]
+
+
+def test_uv_run_with_requirement_is_verified_not_the_script() -> None:
+    cfg = _cfg("uv", ["run", "--with", "pkg==1.0", "server.py"])
+    baseline = PackageVerifier(fetch=lambda ref: "sha256-a").capture(cfg)
+    assert baseline == {"pypi:pkg:1.0": "sha256-a"}
 
 
 class TestVerifier:

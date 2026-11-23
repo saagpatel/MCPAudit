@@ -88,13 +88,53 @@ _MAX_ARTIFACT_FILES = 24
 # the fetch at an internal address (SSRF). Restrict to known registry/CDN hosts.
 _ALLOWED_DOWNLOAD_HOSTS = frozenset({"registry.npmjs.org", "files.pythonhosted.org", "pypi.org"})
 
-# Runner commands by ecosystem. The package spec is parsed from the args.
-_NPM_RUNNERS = {"npx", "npm"}
-_PYPI_RUNNERS = {"uvx", "pipx", "uv"}
+# Value flags per runner: options whose NEXT token is a value, so that token is
+# neither the package nor the launched command. Unknown options are treated as
+# boolean switches. Flags that name the package itself are listed separately.
+_NPM_VALUE_FLAGS = {"-c", "--call", "-w", "--workspace", "--registry", "--cache", "--prefix", "--userconfig"}
+_NPM_PACKAGE_FLAGS = {"--package", "-p"}
+_UV_VALUE_FLAGS = {
+    "--with",
+    "--with-editable",
+    "--with-requirements",
+    "--python",
+    "-p",
+    "--index",
+    "--default-index",
+    "--index-url",
+    "-i",
+    "--extra-index-url",
+    "--find-links",
+    "-f",
+    "--constraints",
+    "-c",
+    "--overrides",
+    "--build-constraints",
+    "-b",
+    "--directory",
+    "--project",
+    "--env-file",
+    "--config-file",
+    "--cache-dir",
+    "--index-strategy",
+    "--keyring-provider",
+    "--resolution",
+    "--prerelease",
+    "--exclude-newer",
+    "--link-mode",
+    "--python-platform",
+    "--color",
+    "--allow-insecure-host",
+    "--extra",
+    "--group",
+    "--only-group",
+    "--no-group",
+    "--package",
+    "--from",
+}
+_PIPX_VALUE_FLAGS = {"--python", "--pip-args", "--index-url", "--spec"}
 
-# npx/npm/pipx/uv flags that consume the NEXT token as a value (so it isn't the
-# package spec). "--package"/"-p"/"--from" point AT the package, handled separately.
-_VALUE_FLAGS = {"-c", "--call", "-w", "--workspace"}
+_NPM_EXACT_VERSION = re.compile(r"v?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?")
 
 
 @dataclass(frozen=True)
@@ -107,6 +147,20 @@ class PackageRef:
 
     def key(self) -> str:
         return f"{self.ecosystem}:{self.name}:{self.version}"
+
+    @property
+    def is_exact(self) -> bool:
+        """True when ``version`` names one immutable release a registry can be asked for.
+
+        npm: a semver version (not a dist-tag such as ``latest`` or a range such as
+        ``^1.2.0``). PyPI: an ``==`` version without a ``*`` wildcard. Only exact refs
+        are captured at pin time and verified at check time.
+        """
+        if not self.version:
+            return False
+        if self.ecosystem == "npm":
+            return _NPM_EXACT_VERSION.fullmatch(self.version) is not None
+        return "*" not in self.version
 
 
 def _split_npm_spec(spec: str) -> tuple[str, str | None]:
@@ -126,62 +180,143 @@ def _split_npm_spec(spec: str) -> tuple[str, str | None]:
     return spec, None
 
 
-def _split_pypi_spec(spec: str) -> tuple[str, str | None]:
-    """Split a PyPI spec into (name, version). Only '==' yields an exact version."""
+def _split_pypi_spec(spec: str, *, at_version: bool = False) -> tuple[str, str | None]:
+    """Split a PyPI requirement into (name, version). Only '==' yields an exact version.
+
+    Extras (``pkg[cli]``) and environment markers (``; python_version < '3.13'``) are
+    dropped from the name. With ``at_version`` (uv's ``pkg@1.2.3`` spelling), the part
+    after ``@`` is the version; ``@latest`` names no fixed version.
+    """
+    spec = spec.split(";", 1)[0].strip()
+    if at_version and "@" in spec and "==" not in spec:
+        name, version = spec.split("@", 1)
+        name, version = name.strip(), version.strip()
+        return name.split("[", 1)[0].strip(), (None if version in {"", "latest"} else version)
     if "==" in spec:
         name, version = spec.split("==", 1)
-        return name.strip(), version.strip() or None
+        return name.split("[", 1)[0].strip(), version.strip() or None
     # Non-pinned constraints (>=, ~=, bare) have no exact version to verify.
     for sep in ("<", ">", "~", "!", "="):
         if sep in spec:
-            return spec.split(sep, 1)[0].strip(), None
-    return spec.strip(), None
+            spec = spec.split(sep, 1)[0]
+            break
+    return spec.split("[", 1)[0].strip(), None
 
 
-def _first_package_token(args: list[str], from_flags: set[str]) -> str | None:
-    """Return the launch arg that names the package, or None.
+@dataclass
+class _ParsedArgs:
+    """Options a runner consumed before its first positional, and that positional."""
 
-    Honours ``--from``/``--package``/``-p`` (next token is the package); otherwise
-    the first non-flag, non-subcommand token.
+    values: dict[str, list[str]] = field(default_factory=dict)
+    positional: str | None = None
+    rest: list[str] = field(default_factory=list)
+
+
+def _parse_runner_args(args: list[str], value_flags: set[str]) -> _ParsedArgs:
+    """Read options up to the first positional; everything after it belongs to it.
+
+    ``--flag value`` and ``--flag=value`` are recorded under ``--flag`` when it is a
+    value flag. ``--`` ends the options, so the next token is the positional.
     """
-    skip_subcommands = {"exec", "run", "tool", "x", "--"}
+    parsed = _ParsedArgs()
     i = 0
     while i < len(args):
         arg = args[i]
-        if arg in from_flags:
-            return args[i + 1] if i + 1 < len(args) else None
-        if arg.startswith("--") and "=" in arg and arg.split("=", 1)[0] in from_flags:
-            return arg.split("=", 1)[1] or None
-        if arg in _VALUE_FLAGS:
-            i += 2
-            continue
-        if arg.startswith("-") or arg in skip_subcommands:
+        if arg == "--":
+            if i + 1 < len(args):
+                parsed.positional, parsed.rest = args[i + 1], args[i + 2 :]
+            return parsed
+        if arg.startswith("-") and "=" in arg and arg.split("=", 1)[0] in value_flags:
+            flag, value = arg.split("=", 1)
+            parsed.values.setdefault(flag, []).append(value)
             i += 1
             continue
-        return arg
-    return None
+        if arg in value_flags:
+            if i + 1 < len(args):
+                parsed.values.setdefault(arg, []).append(args[i + 1])
+            i += 2
+            continue
+        if arg.startswith("-"):
+            i += 1
+            continue
+        parsed.positional, parsed.rest = arg, args[i + 1 :]
+        return parsed
+    return parsed
+
+
+def _with_refs(parsed: _ParsedArgs) -> list[PackageRef]:
+    """Registry packages uv installs alongside the command (``--with a==1,b``)."""
+    refs: list[PackageRef] = []
+    for value in parsed.values.get("--with", []):
+        for requirement in value.split(","):
+            if requirement.strip():
+                name, version = _split_pypi_spec(requirement, at_version=True)
+                if name:
+                    refs.append(PackageRef("pypi", name, version))
+    return refs
+
+
+def _npm_refs(args: list[str]) -> list[PackageRef]:
+    parsed = _parse_runner_args(args, _NPM_VALUE_FLAGS | _NPM_PACKAGE_FLAGS)
+    named = [v for flag in ("--package", "-p") for v in parsed.values.get(flag, [])]
+    spec = named[0] if named else parsed.positional
+    return [PackageRef("npm", *_split_npm_spec(spec))] if spec else []
+
+
+def _uv_tool_run_refs(args: list[str]) -> list[PackageRef]:
+    """``uvx`` / ``uv tool run``: the package (``--from`` or the command) plus ``--with``."""
+    parsed = _parse_runner_args(args, _UV_VALUE_FLAGS)
+    source = parsed.values.get("--from", [None])[0] or parsed.positional
+    refs = [PackageRef("pypi", *_split_pypi_spec(source, at_version=True))] if source else []
+    return refs + _with_refs(parsed)
 
 
 def resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
-    """Resolve package references from a server's launch command + args.
+    """Resolve the registry packages a server's launch installs and runs, each once.
+
+    See ``_resolve_package_refs`` for the per-runner grammar.
+    """
+    return list(dict.fromkeys(_resolve_package_refs(server_config)))
+
+
+def _resolve_package_refs(server_config: ServerConfig) -> list[PackageRef]:
+    """Resolve the registry packages a server's launch installs and runs.
 
     Best-effort: returns an empty list when the launch isn't a recognised package
-    runner or the spec can't be parsed (never invents a ref). At most one ref per
-    server today (the launched package).
+    runner or the spec can't be parsed (never invents a ref). Per runner:
+
+    - ``npx`` and ``npm exec``/``npm x``: the package (``--package``/``-p`` or the
+      first positional). Other ``npm`` subcommands (``npm run build``) launch no
+      registry package.
+    - ``uvx`` and ``uv tool run``: the package (``--from`` or the command; ``pkg==1.0``
+      and uv's ``pkg@1.0``) plus each ``--with`` requirement.
+    - ``uv run``: only ``--with`` requirements; the command or script is local.
+    - ``pipx run``: the package (``--spec`` or the first positional).
     """
     command = (server_config.command or "").rsplit("/", 1)[-1].lower()
     args = [str(a) for a in server_config.args]
 
-    if command in _NPM_RUNNERS:
-        token = _first_package_token(args, {"--package", "-p"})
-        if token:
-            name, version = _split_npm_spec(token)
-            return [PackageRef("npm", name, version)]
-    elif command in _PYPI_RUNNERS:
-        token = _first_package_token(args, {"--from"})
-        if token:
-            name, version = _split_pypi_spec(token)
-            return [PackageRef("pypi", name, version)]
+    if command == "npx":
+        return _npm_refs(args)
+    if command == "npm":
+        parsed = _parse_runner_args(args, _NPM_VALUE_FLAGS)
+        return _npm_refs(parsed.rest) if parsed.positional in {"exec", "x"} else []
+    if command == "uvx":
+        return _uv_tool_run_refs(args)
+    if command == "uv":
+        parsed = _parse_runner_args(args, _UV_VALUE_FLAGS)
+        if parsed.positional == "tool" and parsed.rest[:1] == ["run"]:
+            return _uv_tool_run_refs(parsed.rest[1:])
+        if parsed.positional == "run":
+            return _with_refs(_parse_runner_args(parsed.rest, _UV_VALUE_FLAGS))
+        return []
+    if command == "pipx":
+        parsed = _parse_runner_args(args, _PIPX_VALUE_FLAGS)
+        if parsed.positional != "run":
+            return []
+        run = _parse_runner_args(parsed.rest, _PIPX_VALUE_FLAGS)
+        spec = run.values.get("--spec", [None])[0] or run.positional
+        return [PackageRef("pypi", *_split_pypi_spec(spec))] if spec else []
     return []
 
 
@@ -196,14 +331,7 @@ def _iter_pinned_refs(
     is provenance's signal (MCP021), not a verification finding here. Yielded refs
     always carry a version.
     """
-    refs_by_key = {
-        ref.key(): ref
-        for ref in resolve_package_refs(server_config)
-        if ref.version
-        and (
-            ref.ecosystem != "npm" or re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?", ref.version)
-        )
-    }
+    refs_by_key = {ref.key(): ref for ref in resolve_package_refs(server_config) if ref.is_exact}
     for key, baseline_hash in sorted(baseline_hashes.items()):
         ref = refs_by_key.get(key)
         usable = bool(baseline_hash)
@@ -421,11 +549,13 @@ class PackageVerifier:
         """Pin-time: fetch registry hashes for the server's pinned packages.
 
         Returns ``{ref_key: hash}`` for every exact-version package we could fetch.
-        Unpinned versions and fetch failures are omitted (nothing to baseline).
+        Unpinned or moving versions (``latest``, ``^1.2.0``) and fetch failures are
+        omitted: check time only verifies exact refs, so a baseline for anything else
+        would never be checked.
         """
         captured: dict[str, str] = {}
         for ref in resolve_package_refs(server_config):
-            if ref.version is None:
+            if not ref.is_exact:
                 continue
             digest = self._fetch(ref)
             if digest:
@@ -650,7 +780,7 @@ class ArtifactVerifier:
         """
         capture = ArtifactCapture()
         for ref in resolve_package_refs(server_config):
-            if ref.version is None:
+            if not ref.is_exact:  # check time verifies exact refs only
                 continue
             label = f"{ref.name}@{ref.version}"
             result = self._fetch(ref)
